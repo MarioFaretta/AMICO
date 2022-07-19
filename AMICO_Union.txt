@@ -1,0 +1,2690 @@
+//////////////////////variable declaration and inizialization/////////////////////////////////////////////////
+var bgcanali;
+var ffchannels;
+var rollingbg;
+var size;
+var stackslices;
+var target;
+chDAPI=0;
+var karray;
+var arrayx;
+var arrayy;
+var vis=newArray(0,0,0,0,0,0,0);
+var arrayrows;
+var arraycolumns;
+var arrayxstring;
+var arrayystring;
+var shift;
+var cellwidth;
+var cellheight;
+var cells;
+var controlID;
+var slideID;
+var IDchannel;
+var slidewidth;
+var slideheight;
+var imagewidth;
+var imageheight
+var imagedepth;
+var autothresholdindex;
+var analysisindex;
+var bgsub;
+var subfilterlist;
+var subcompindex;
+var subcellindex;
+var subminsize;
+var submaxsize;
+var subthreshold;
+var subfilterspot;
+var subgammafactor;
+var subautothreshold;
+var subsubindex;
+var segment;
+var flatfielddir;
+var RGBID;
+var DAPIID;
+var online;
+var wholecell;
+var maxdistance=50;
+autobgcheck=true;
+rollingbg=90;
+arrayu="00";
+arrayv="00";
+arrayxstring="00";
+arrayystring="00";
+mincellsize=0;
+mincellsize=0;
+maxcellsize=0;
+lowthresh=0;
+upthresh=0;
+channels=1;
+run("Options...", "iterations=1 count=1 black edm=Overwrite");
+dir = getDirectory("Choose a Directory ");
+list = getFileList(dir);
+
+nd2check=indexOf(list[0],".nd2");
+/////////////////////////////////////////////////////////////number of images in the target dir/////////////////////
+total = list.length;
+Array.sort(list);
+Dialog.create("Insert a short description for data (it will be used in the results filename)");
+Dialog.addString("Experiment tag", "Ctrl");
+Dialog.show();
+tag=Dialog.getString();
+fluorochromes=newArray("Alexa488", "Alexa568", "Chromo", "Cy3", "Cy5", "Dapi", "fitc", "PacificBlue", "RFP", "YFP");
+colors=newArray("Red","Green","Blue","Grays","Cyan","Yellow", "Magenta");
+colcoeff=newArray(1,0,0,0,1,0,0,0,1,1,1,1,0,1,1,1,1,0,1,0,1);
+alt=8;
+leftButton=16;
+online=false;
+x=-1;
+y=-1;
+let=1;
+
+
+
+
+
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////channel recognition based on the lastIndex of the "-" character (e.g. "--A488.tif")/////////////////////////////////
+id = dir + list[0];
+lengthf=File.length(id);
+print("Dimension: "+d2s(lengthf/pow(1024, 2), 2)+" MB");
+if(nd2check>-1){
+run("Bio-Formats Macro Extensions");
+print("Checking Image Acquisition Parameters...please be patient");
+tstart=getTime();
+//run("Bio-Formats", "open=["+id+"] autoscale color_mode=Default display_metadata rois_import=[ROI manager] view=[Metadata only] stack_order=Default");
+run("Bio-Formats", "open=["+id+"] autoscale color_mode=Default rois_import=[ROI manager] specify_range view=[Standard ImageJ] stack_order=XYCZT c_begin=1 c_end=1 c_step=1");
+rename("ForInfo");
+tstop=getTime();
+print(d2s((tstop-tstart)/1000,0)+" seconds elapsed");
+//selectWindow("Original Metadata - "+list[0]);
+//xmlstring=getInfo("window.contents");
+xmlstring=Property.getInfo();
+channels=parseInt(substring(xmlstring,indexOf(xmlstring,"SizeC")+8,indexOf(xmlstring,"SizeT")));
+//imagewidth=parseInt(substring(xmlstring,indexOf(xmlstring,"SizeX")+5,indexOf(xmlstring,"SizeY")));
+imagewidth=getWidth();
+//imageheight=parseInt(substring(xmlstring,indexOf(xmlstring,"SizeY")+5,indexOf(xmlstring,"SizeZ")));
+imageheight=getHeight();
+//sizeZ=parseInt(substring(xmlstring,indexOf(xmlstring,"SizeZ")+5,indexOf(xmlstring,"Average")));
+selectImage("ForInfo");
+run("Close");
+canali=newArray(channels);
+canalixml=newArray(channels);
+for(i=0; i<channels; i++){
+canali[i]="Channel"+d2s(i,0);
+}
+} else {
+open(id);
+run("Set Scale...", "distance=0 known=0 pixel=1 unit=pixel");
+imagewidth=getWidth();
+imageheight=getHeight();
+imagedepth=bitDepth();
+close();
+firstch=substring(list[0], lastIndexOf(list[0], "-"), indexOf(list[0], ".tif"));
+for (ch=1; ch<total; ch++){
+if(indexOf(list[ch],firstch)<0){
+channels=channels+1;
+} else {
+ch=total;
+}
+}
+canali=newArray(channels);
+for (ch=0; ch<channels; ch++){
+canali[ch]=substring(list[ch], lastIndexOf(list[ch], "-")+1, indexOf(list[ch], ".tif"));
+}
+}
+///////////////////////////////////////////////
+//Acquisition parameters definition
+if(nd2check<0){
+positions=total/channels;
+} else {
+positions=total;
+}
+channelsize=lengthf/(pow(10, 6)*channels);
+print("Dimension: "+d2s(channelsize,0)+" MB");
+/////////////////////if file size is big only a centered region of fixed size will be opened during the set up of the analysis parameters//////////
+if(channelsize>4000){
+bigfcheck=true;
+wpreview=2048;
+hpreview=2048;
+xpreview=imagewidth/2-wpreview/2;
+ypreview=imageheight/2-hpreview/2;
+print("Warning: cropping of images for analysis settings will be activated");
+} else {
+bigfcheck=false;
+wpreview=imagewidth;
+hpreview=imageheight;
+xpreview=0;
+ypreview=0;
+}
+///////////////////////
+projmethods=newArray("Max Intensity", "Sum Slices", "Average Intensity", "Standard Deviation", "Min Intensity", "Median");
+Dialog.create("New Array");
+Dialog.addMessage(" # of positions: "+positions+"\n # of channels: "+channels);
+Dialog.addNumber("# of X positions: ", positions);
+Dialog.addNumber("# of Y positions: ", 1);
+//Dialog.addNumber("# of  Channels: ", 5);
+//Dialog.addCheckbox("Whole Cell Analysis", false);
+Dialog.addCheckbox("Confocal Data", false);
+Dialog.addNumber("# of Z slices (Leica MSA structure applied): ", 1);
+Dialog.addChoice("Projection Method (for stacks only): ", projmethods, projmethods[0]);
+Dialog.show();
+arraycolumns = Dialog.getNumber();
+arrayrows = Dialog.getNumber();
+//channels=Dialog.getNumber();
+//wholecell=Dialog.getCheckbox();
+confdata=Dialog.getCheckbox();
+stackslices=Dialog.getNumber();
+projmeth=Dialog.getChoice();
+///////////////////Retrieving Number of channels///////////////////////
+
+//////////////////////////////////////////Notes: confocal data based on Leica Matrix naming. Not valid in general//////////////
+if(confdata){
+
+}
+//////////////////end of confdata/////////////////////////////////
+
+///////////////////channel for segmentation//////////////////
+
+Dialog.create("Select Channel for Cell (Nuclei) Identification");
+Dialog.addChoice("Cell Identifier: ", canali);
+Dialog.show();
+cellchannel=Dialog.getChoice();
+for (ch=0; ch<channels; ch++){
+if(canali[ch]==cellchannel){
+chDAPI=ch;
+}
+}
+canali[chDAPI]="segm"+canali[chDAPI];
+Array.show(canali);
+if(nd2check<0){
+if(confdata){
+
+} else {
+fileDAPI=dir+list[chDAPI];
+}
+}
+
+
+
+
+
+//////////////////////////////////////////////////////Main Panel////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+
+newImage("Control Panel","RGB White", 200, 53, 1);
+Buttons=newArray("       Slide Browser", "Set up and Processing");
+for(i=0; i<2; i++){
+setColor(0,0,62);
+drawRect(5, 5+24*i, 192, 22);
+setColor(0,0,125);
+drawRect(5, 5+24*i, 191, 21);
+setColor(0,0,255);
+fillRect(5,5+24*i,190, 20);
+setColor(255,255,255);
+drawString(Buttons[i], 40, 23+24*i);
+}
+controlID=getImageID();
+
+while(isOpen(controlID)){
+print("open");
+if(isActive(controlID)){
+setTool("hand");
+getCursorLoc(x1, y1, z1, flags);
+print(controlID+" "+x1+" "+y1);
+if((flags&leftButton!=0)&&(x1!=x)&&(y1!=y)){
+x=x1; y=y1;
+secondtime=false;
+if((x1>5)&&(x1<195)&&(y1>5)&&(y1<25)){
+setColor(255,255,255);
+fillRect(5,5,190, 20);
+setColor(0,0,0);
+drawString(Buttons[0], 40, 23);
+Slide(dir, list, arraycolumns, arrayrows, channels);
+print(Buttons[0]);
+SlideBrowser(slideID, imagewidth, imageheight, slidewidth, slideheight, imagedepth, dir, list, canali, shift, arrayrows, arraycolumns);
+selectImage(controlID);
+print("RGBID: "+RGBID);
+if(!isOpen("Slide")){
+if(isOpen("RGB")){
+selectWindow("RGB");
+close();
+} 
+}
+}
+if((x1>5)&&(x1<195)&&(y1>29)&&(y1<49)){
+//Analysis//////////////
+print(Buttons[1]);
+imglist=getList("image.titles");
+for(im=0; im<lengthOf(imglist); im++){
+selectImage(imglist[im]);
+checkID=getImageID();
+if((checkID!=controlID)){
+close();
+}
+}
+AnalysisPanel(dir, list, stackslices, chDAPI, canali, channels);
+x1=0;
+y1=0;
+selectImage(controlID);
+}
+
+
+}
+}
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+////////////////Creation of the position selector///////////
+function Slide(dir, list, arraycolumns, arrayrows, channels){
+fluorochromes=newArray("Alexa488", "Alexa568", "CFP", "Cy3", "Cy5", "Dapi", "fitc", "GFP", "RFP", "YFP");
+
+alt=8;
+leftButton=16;
+cells=arrayrows*arraycolumns;
+cellwidth=floor(900/arraycolumns);
+cellheight=floor(375/arrayrows);
+
+//Slide Scheme Creation////////////////////
+setBatchMode(true);
+newImage("Slide_Stack", "RGB Black", cellwidth, cellheight, cells);
+slidestack=getImageID();
+RGB=newArray("Red","Green","Blue");
+selectImage(slidestack);
+setForegroundColor(0,255,0);
+if(cells>1){
+makeOval(cellwidth/2-minOf(cellwidth/4, cellheight/4), cellheight/2-minOf(cellwidth/4, cellheight/4), minOf(cellwidth/2, cellheight/2), minOf(cellwidth/2, cellheight/2));
+run("Fill", "stack");
+run("Make Montage...", "columns="+arraycolumns+" rows="+arrayrows+" scale=1 first=1 last="+cells+" increment=1");
+rename("Slide");
+} else {
+run("Duplicate...", "title=Slide");
+makeOval(cellwidth/2-minOf(cellwidth/4, cellheight/4), cellheight/2-minOf(cellwidth/4, cellheight/4), minOf(cellwidth/2, cellheight/2), minOf(cellwidth/2, cellheight/2));
+run("Fill");
+}
+slideID=getImageID();
+slidewidth=getWidth();
+slideheight=getHeight();
+selectImage(slidestack);
+close();
+setBackgroundColor(120, 120, 120);
+run("Canvas Size...", "width=900 height=375 position=Center ");
+setBackgroundColor(255, 255, 255);
+run("Canvas Size...", "width=1200 height=375 position=Center-Right");
+shift=220;
+selectImage(slideID);
+setBatchMode(false);
+updateDisplay();
+setLocation(0, 0);
+return(slideID);
+return(slidewidth);
+return(slideheight);
+return(shift);
+return(cellwidth);
+return(cellheight);
+return(cells);
+return(imagewidth);
+return(imageheight);
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+function SlideBrowser(slideID, imagewidth, imageheight, slidewidth, slideheight, imagedepth, dir, list, canali, shift, arrayrows, arraycolumns){
+fluorochromes=newArray("Alexa488", "Alexa568", "CFP", "Cy3", "Cy5", "Dapi", "fitc", "GFP", "RFP", "YFP");
+colors=newArray("Red","Green","Blue","Grays","Cyan","Yellow", "Magenta");
+colcoeff=newArray(1,0,0,0,1,0,0,0,1,1,1,1,0,1,1,1,1,0,1,0,1);
+RGB=newArray("RGB (red)","RGB (green)","RGB (blue)");
+//return toString(SlideBrowser(RGBID));
+//Array Browser
+startx=300+floor((900-slidewidth)/2);
+starty=floor((375-slideheight)/2);
+x2=startx+cellwidth/2-minOf(cellwidth/4, cellheight/4);
+y2=starty+cellheight/2-minOf(cellwidth/4, cellheight/4);
+test=12;
+while(isOpen("Slide")){
+while(isActive(slideID)){
+getCursorLoc(x1, y1, z1, flags);
+print("slide active. x1="+x1+"; y1="+y1);
+if((flags&leftButton!=0)&&(x1!=x)&&(y1!=y)){
+arrayx=floor((x1-startx)/cellwidth);
+arrayy=floor((y1-starty)/cellheight);
+if((flags&leftButton!=0)&&(arrayx>=0)&&(arrayx<arraycolumns)&&(arrayy>=0)&&(arrayy<arrayrows)){
+print("x1: "+x1+" y1: "+y1+" x: "+x+" y: "+y);
+print("Row: "+arrayy+" Column: "+arrayx);
+setColor(0,255,0);
+fillOval(x2, y2, minOf(cellwidth/2, cellheight/2), minOf(cellwidth/2, cellheight/2));
+setColor(255,0,0);
+fillOval(startx+arrayx*cellwidth+cellwidth/2-minOf(cellwidth/4, cellheight/4), starty+arrayy*cellheight+cellheight/2-minOf(cellwidth/4, cellheight/4), minOf(cellwidth/2, cellheight/2), minOf(cellwidth/2, cellheight/2));
+x=x1;
+y=y1;
+x2=startx+arrayx*cellwidth+cellwidth/2-minOf(cellwidth/4, cellheight/4);
+y2=starty+arrayy*cellheight+cellheight/2-minOf(cellwidth/4, cellheight/4);
+setBatchMode(true);
+
+if(isOpen("seq5d")){
+selectImage("seq5d");
+close();
+}
+if(isOpen("RGB")){
+selectImage("RGB");
+close();
+}
+karray=arrayx+arrayy*arraycolumns;
+file=dir+list[karray];
+if(nd2check>-1){
+if((channelsize<=1000)||(channels<10)){
+run("Bio-Formats", "open=["+file+"] autoscale color_mode=Default rois_import=[ROI manager] specify_range view=Image5D stack_order=XYCZT c_begin=1 c_end="+channels+" c_step=1");
+RGBID=getImageID();
+rename("RGB");
+for(ich=0; ich<channels; ich++){
+run("Set Position", "x-position=1 y-position=1 channel="+(ich+1)+" slice=1 frame=1 display=overlay");
+//run(colors[ich]);
+run("Smooth");
+run("Enhance Contrast", "saturated=0.1");
+}
+} else {
+////////////////Interface for selection of cropped region for settings//////////////
+items = newArray("Array-Position Selection", "ROI Selection", "Channels Display Selection (Core)", "Close Window");
+button=items[0];
+mapcount=0;
+checkArray=newArray(7);
+prmtArray=newArray(7);
+chanArray=newArray(7);
+colorArray=newArray("Red", "Green", "Blue", "Grays", "Cyan", "Magenta", "Yellow");
+labels=newArray("--None--");
+labels=Array.concat(labels, canali);
+bigdialog=true;
+while(bigdialog){
+Dialog.createNonBlocking("High-Res Image(Map) Browsing ");
+Dialog.addRadioButtonGroup("", items, 1, 4, button);
+//Dialog.addToSameRow();
+//Dialog.addMessage("Select the Channel for the Full-Resolution Image");
+Dialog.show();
+button=Dialog.getRadioButton();
+
+if(button==items[0]){
+Dialog.create("Channel Selection");
+Dialog.addChoice("Select the Channel for the Full-Resolution Image (Map): ", canali, canali[chDAPI]);
+Dialog.show();
+labelch=Dialog.getChoice();
+for(ich=0; ich<lengthOf(canali); ich++){
+if(labelch==canali[ich]){
+labelindex=ich+1;
+}
+}
+browsingcheck=0;
+while(browsingcheck==1){
+selectImage(slideID);
+getCursorLoc(x1, y1, z1, flags);
+print("slide active. x1="+x1+"; y1="+y1);
+if((flags&leftButton!=0)&&(x1!=x)&&(y1!=y)){
+arrayx=floor((x1-startx)/cellwidth);
+arrayy=floor((y1-starty)/cellheight);
+if((flags&leftButton!=0)&&(arrayx>=0)&&(arrayx<arraycolumns)&&(arrayy>=0)&&(arrayy<arrayrows)){
+print("x1: "+x1+" y1: "+y1+" x: "+x+" y: "+y);
+print("Row: "+arrayy+" Column: "+arrayx);
+setColor(0,255,0);
+fillOval(x2, y2, minOf(cellwidth/2, cellheight/2), minOf(cellwidth/2, cellheight/2));
+setColor(255,0,0);
+fillOval(startx+arrayx*cellwidth+cellwidth/2-minOf(cellwidth/4, cellheight/4), starty+arrayy*cellheight+cellheight/2-minOf(cellwidth/4, cellheight/4), minOf(cellwidth/2, cellheight/2), minOf(cellwidth/2, cellheight/2));
+x=x1;
+y=y1;
+x2=startx+arrayx*cellwidth+cellwidth/2-minOf(cellwidth/4, cellheight/4);
+y2=starty+arrayy*cellheight+cellheight/2-minOf(cellwidth/4, cellheight/4);
+setBatchMode(true);
+
+if(isOpen("seq5d")){
+selectImage("seq5d");
+close();
+}
+if(isOpen("Map")){
+selectImage("Map");
+close();
+}
+karray=arrayx+arrayy*arraycolumns;
+file=dir+list[karray];
+print("Row: "+arrayy+" Column: "+arrayx);
+browsingcheck=0;
+}
+}
+}
+posname="Row: "+arrayy+" Column: "+arrayx;
+setBatchMode(true);
+if(isOpen("Map")){
+selectImage("Map");
+close();
+}
+run("Bio-Formats", "open=["+file+"] autoscale color_mode=Default rois_import=[ROI manager] specify_range view=[Standard ImageJ] stack_order=XYCZT c_begin="+labelindex+" c_end="+labelindex+" c_step=1");
+mapID=getImageID();
+rename("Map");
+setMetadata("Label", labelch+"; "+posname);
+mapcount=1;
+run("Grays");
+setBatchMode("exit and display");
+bigdialog=false;
+}
+if(button==items[1]){
+if((imagewidth>2048)&&(imageheight>2048)){
+Dialog.create("Channel Selection");
+Dialog.addChoice("Select the Channel for the Full-Resolution Image (Map): ", canali, canali[chDAPI]);
+Dialog.show();
+labelch=Dialog.getChoice();
+for(ich=0; ich<lengthOf(canali); ich++){
+if(labelch==canali[ich]){
+labelindex=ich+1;
+}
+}
+setBatchMode(true);
+if(mapcount==0){
+print("Opening "+file+"; "+labelch);
+run("Bio-Formats", "open=["+file+"] autoscale color_mode=Default rois_import=[ROI manager] specify_range view=[Standard ImageJ] stack_order=XYCZT c_begin="+labelindex+" c_end="+labelindex+" c_step=1");
+mapID=getImageID();
+rename("Map");
+setMetadata("Label", labelch+"; "+posname);
+selectImage("Map");
+mapcount=mapcount+1;
+} 
+setBatchMode("exit and display");
+selectImage(mapID);
+wpreview=2048;
+hpreview=2048;
+xpreview=imagewidth/2-wpreview/2;
+ypreview=imageheight/2-hpreview/2;
+makeRectangle(xpreview, ypreview, wpreview, hpreview);
+mapch=false;
+setTool("Rectangle");
+waitForUser("Move the Region to the target area (if not central portion will be selected; size is fixed to 2048x2048)");
+getSelectionBounds(xpreview, ypreview, wroi, hroi);
+wpreview=minOf(2048,wroi);
+hpreview=minOf(2048,hroi);
+} else {
+showMessage("Option active only for big images (width and heigth >2048 pixels");
+}
+bigdialog=false;
+}
+if(button==items[2]){
+setBatchMode(true);
+Dialog.create("Displayed Channels Selection");
+for(i=0; i<7; i++){
+Dialog.addCheckbox(d2s(i+1,0)+": "+colorArray[i], checkArray[i]);
+Dialog.addToSameRow();
+if(checkArray[i]){
+Dialog.addChoice("", labels, prmtArray[i]);
+} else {
+Dialog.addChoice("", labels, labels[0]);
+}
+}
+Dialog.show();
+
+//corechoice=Dialog.getChoice();
+for(i=0; i<7; i++){
+checkArray[i]=Dialog.getCheckbox();
+prmtArray[i]=Dialog.getChoice();
+}
+Array.show(prmtArray);
+chch=0;
+metastring=list[karray]+"\n";
+for(i=0; i<7; i++){
+if(checkArray[i]){
+for(ich=0; ich<lengthOf(canali); ich++){
+if(prmtArray[i]==canali[ich]){
+print("Opening Image "+list[karray]+"--"+prmtArray[i]+": please be patient...");
+run("Bio-Formats", "open=["+file+"] autoscale color_mode=Default crop rois_import=[ROI manager] specify_range view=[Standard ImageJ] stack_order=XYCZT c_begin="+(ich+1)+" c_end="+(ich+1)+" c_step=1 x_coordinate_1="+xpreview+" y_coordinate_1="+ypreview+" width_1="+wpreview+" height_1="+hpreview);
+rename(list[karray]+"--"+prmtArray[i]);
+setMetadata("Label", list[karray]+"--"+prmtArray[i]);
+metastring=metastring+prmtArray[i]+"--"+colorArray[i]+"\n";}
+chch=chch+1;
+}
+}
+}
+
+if(chch==0){
+showMessage("Define at least one parameter");
+} else {
+chanArray=split(metastring,"\n");
+Array.show(colorArray, prmtArray, chanArray);
+if(chch>1){
+run("Images to Stack", "name="+list[karray]+" title="+list[karray]+"-- use");
+run("Stack to Hyperstack...", "order=xyczt(default) channels="+nSlices+" slices=1 frames=1 display=Color");
+for(i=1; i<nSlices+1; i++){
+Stack.setChannel(i);
+setMetadata("Label", chanArray[i]);
+run(substring(chanArray[i],lastIndexOf(chanArray[i],"-")+1));
+run("Enhance Contrast", "saturated=0.1");
+}
+run("Channels Tool...");
+run("Brightness/Contrast...");
+Stack.setDisplayMode("composite");
+} 
+}
+setBatchMode("exit and display");
+bigdialog=false;
+}
+if(button==items[3]){
+bigdialog=false;
+}
+}
+/////////////////////end of Interface for cropping///////////////
+}
+} else {
+Array.show(list);
+file=dir+list[channels*karray+1];
+print(file);
+print(channels);
+run("Virtual Image5D Opener", "open=["+file+"] number="+channels+" starting="+(karray*channels+1)+" increment=1 file=.tif 3rd=ch 4th=z 3rd_dimension_size="+channels+" 4th_dimension_size="+stackslices+" assign");
+run("Set Scale...", "distance=0 known=0 pixel=1 unit=pixel");
+RGBID=getImageID();
+rename("RGB");
+for(ich=0; ich<channels; ich++){
+run("Set Position", "x-position=1 y-position=1 channel="+(ich+1)+" slice=1 frame=1 display=tiled");
+run("Smooth");
+run("Enhance Contrast", "saturated=0.1");
+}
+}
+//selectImage(RGBID);
+
+if(confdata){
+
+}
+}
+
+
+print("File List Index: "+d2s(karray,0));
+
+
+
+setBatchMode("exit and display");
+updateDisplay();
+//selectImage(RGBID);
+//selectImage(seq);
+selectImage(slideID);
+
+}
+}
+}
+
+
+return RGBID;
+return karray;
+}
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+function AnalysisPanel(dir, list, stackslices, chDAPI, canali, channels) {
+// Analysis part of Macro_slide
+
+
+subchID=0;
+chID=0;
+DAPIID=0;
+var size;
+leftButton=16;
+indexthreshold=0;
+segment=newArray("Manual","Huang", "Intermodes", "IsoData", "Li", "MaxEntropy", "Mean", "MinError", "Minimum", "Moments", "Otsu", "Percentile", "RenyiEntropy", "Shanbhag", "Triangle", "Yen");
+if(nd2check<0){
+fileDAPI=dir+list[channels*karray+chDAPI];
+} else {
+fileDAPI=dir+list[karray];
+}
+print("File DAPI: "+fileDAPI);
+print("Segmenting Channel: "+chDAPI);
+print("nd2check: "+nd2check);
+x=-1;
+y=-1;
+shift=220;
+lutcoeff=newArray(1,0,0,0,1,0,0,0,1,1,1,1);
+analysisindex=newArray(channels*channels);
+Array.fill(analysisindex, false);
+bgsub=newArray(channels);
+subfilterlist=newArray("None", "LaplaceofGaussian(LoG)", "Top-Hat", "Variance");
+subcompindex=newArray(channels);
+Array.fill(subcompindex, 0);
+subcellindex=newArray(channels);
+Array.fill(subcompindex, 0);
+subminsize=newArray(channels);
+submaxsize=newArray(channels);
+subthreshold=newArray(channels);
+subfilterspot=newArray(channels);
+subgammafactor=newArray(channels);
+subautothreshold=newArray(channels);
+subsubindex=newArray(channels);
+for(subl=0; subl<channels; subl++){
+subfilterspot[subl]=" ";
+subautothreshold[subl]=" ";
+}
+if(!isOpen("Analysis Panel")){
+setBatchMode(true);
+newImage("Analysis Panel", "RGB White", 700, 220+20*channels+30+40+20, 1);
+setLocation(screenWidth-640, 0);
+setColor(0,0,0);
+setFont("SansSerif", 18, "Bold");
+drawString("Analysis Panel", 80, 35);
+setFont("SansSerif", 12, "Bold");
+drawString("Cell Identification Parameters:", 10, 60);
+setFont("SansSerif", 12, "Plain");
+drawString("Backgroung Subtraction:", 10, 80);
+drawString("Set", 262, 80);
+drawRect(256, 66, 30, 14);
+//drawString("Flat field Correction:", 310, 80);
+//drawString("Set", 562, 80);
+//drawRect(556, 66, 30, 14);
+drawString("Minimum Cell Size: ", 10, 100);
+drawString(mincellsize, 120, 100);
+drawString("Set", 262, 100);
+drawRect(256, 86, 30, 14);
+drawString("Maximum Cell Size: "+maxcellsize, 10, 120);
+drawString(maxcellsize, 120, 120);
+drawString("Set", 262, 120);
+drawRect(256, 106, 30, 14);
+drawString("Threshold: ", 10, 140);
+//drawString("["+lowthresh+", "+upthresh+"]", 120, 140);
+drawString("Set", 262, 140);
+drawRect(256, 126, 30, 14);
+drawString("Whole Cell Analysis: ", 10, 160);
+drawString("Set", 262, 160);
+drawRect(256, 146, 30, 14);
+setColor(200, 200, 200);
+drawRect(10, 167,12,12);
+drawString("Membrane: ", 30, 180);
+drawRect(286, 167, 12, 12);
+setColor(255,255,255);
+fillRect(287, 168,10,10);
+setColor(200, 200, 200);
+drawString("Cytoplasm:", 306, 180);
+setColor(0,0,0);
+setFont("SansSerif", 12, "Bold");
+drawString("Analysed Channels:", 10, 210);
+drawString("Sub. Comp.", 220,210);
+setFont("SansSerif", 12, "Plain");
+drawString("Min. Size:", 310, 210);
+drawString("Max. Size:", 380, 210);
+drawString("Description:", 450, 210);
+for(ch=0; ch<channels; ch++){
+setColor(255*analysisindex[ch], 255*analysisindex[ch], 255*analysisindex[ch]);
+fillRect(170, shift-18+20*(ch+1),20,20);
+setColor(0,0,0);
+drawString("Channel "+ch+" ["+canali[ch]+"]", 10, shift+20*(ch+1));
+drawRect(170, shift-18+20*(ch+1),20,20);
+setColor(200,200,200);
+drawRect(240, shift-18+20*(ch+1),20,20);
+}
+setColor(0,0,0);
+drawRect(100, 220+20*channels+30, 100, 40);
+setColor(90, 90, 90);
+fillRect(102, 220+20*channels+30+2, 96, 36);
+setColor(255, 255, 255);
+drawString("Execute Analysis", 105, 220+20*channels+30+28);
+setColor(0,0,0);
+drawRect(300, 220+20*channels+30, 100, 40);
+setColor(90, 90, 90);
+fillRect(302, 220+20*channels+30+2, 96, 36);
+setColor(255, 255, 255);
+drawString("Batch Analysis", 305, 220+20*channels+30+28);
+setColor(0,0,0);
+drawRect(500, 220+20*channels+30, 100, 40);
+setColor(90, 90, 90);
+fillRect(502, 220+20*channels+30+2, 96, 36);
+setColor(255, 255, 255);
+drawString("Online Analysis", 505, 220+20*channels+30+28);
+selectWindow("Analysis Panel");
+analysisID=getImageID();
+setBatchMode("exit and display");
+updateDisplay();
+}
+
+selectImage(analysisID);
+run("View 100%");
+while(isOpen(analysisID)){
+
+//print("Analysis Panel");
+if(isActive(analysisID)){
+setTool("hand");
+getCursorLoc(x1, y1, z1, flags);
+if((flags&leftButton!=0)&&(x1!=x)&&(y1!=y)){
+x=x1; y=y1;
+if((x1>170)&&(x1<190)&&(y1>shift)&&(y1<shift+channels*20)){
+ch=floor((y1-shift)/20);
+
+if(subcompindex[ch]==1){
+subcompindex[ch]=0;
+} 
+setColor(0,0,0);
+fillRect(280, shift-18+20*(ch+1),300,20);
+fillRect(240, shift-18+20*(ch+1),20,20);
+drawRect(240, shift-18+20*(ch+1),20,20);
+fillRect(190, shift-18+20*(ch+1),300,20);
+fillRect(170, shift-18+20*(ch+1),20,20);
+drawRect(170, shift-18+20*(ch+1),20,20);
+fillRect(270, shift-18+20*(ch+1),420,20);
+}
+if((x1>240)&&(x1<260)&&(y1>shift)&&(y1<shift+channels*20)){
+if(!(is("Batch Mode"))){
+setBatchMode(true);
+}
+ch=floor((y1-shift)/20);
+
+subcompindex[ch]=1;
+
+setColor(255,255,255);
+fillRect(280, shift-18+20*(ch+1),300,20);
+setColor(255*subcompindex[ch], 255*subcompindex[ch], 255*subcompindex[ch]);
+fillRect(240, shift-18+20*(ch+1),20,20);
+setColor((1-maxOf(0.5,subcompindex[ch]))*255,(1-maxOf(0.5,subcompindex[ch]))*255,(1-maxOf(0.5,subcompindex[ch]))*255);
+drawRect(240, shift-18+20*(ch+1),20,20);
+if(subcompindex[ch]==1){
+Dialog.create("Subcompartment Description:");
+Dialog.addMessage("Enter a tag for the subcompartment");
+Dialog.addString("Description: ", " ");
+Dialog.addCheckbox("Whole Cell Subcompartment: ", false);
+Dialog.show();
+subsubindex[ch]=Dialog.getString()+"("+canali[ch]+")";
+subcellindex[ch]=Dialog.getCheckbox();
+if((subcellindex[ch])){
+if(!(wholecell)){
+showMessage("Whole Cell subcompartments can be activated with Whole Cell Analysis activated");
+subcellindex[ch]=0;
+}
+}
+Dialog.create("Analysed Channels for: \n"+subsubindex[ch]);
+for(ksub=0; ksub<channels; ksub++){
+Dialog.addCheckbox(canali[ksub],analysisindex[ch*channels+ksub]);
+}
+Dialog.show();
+for(ksub=0; ksub<channels; ksub++){
+analysisindex[ch*channels+ksub]=Dialog.getCheckbox();
+if(analysisindex[ch*channels+ksub]){
+print(subsubindex[ch]+"["+canali[ksub]+"]");
+}
+}
+Dialog.create("Subcompartment Minimum Size:");
+Dialog.addMessage("Enter the minimal area (pixel) for the compartment");
+Dialog.addNumber("Min Area: ", 0);
+Dialog.show();
+subminsize[ch]=Dialog.getNumber();
+setFont("SansSerif", 12, "Plain");
+setColor(0,0,0);
+drawString(subminsize[ch], 320, shift+20*(ch+1));
+Dialog.create("Subcompartment Maximum Size:");
+Dialog.addMessage("Enter the maximal area (pixel) for the compartment");
+Dialog.addNumber("Max Area: ", maxcellsize);
+Dialog.show();
+submaxsize[ch]=Dialog.getNumber();
+setFont("SansSerif", 12, "Plain");
+setColor(0,0,0);
+drawString(submaxsize[ch], 390, shift+20*(ch+1));
+
+selectImage(analysisID);
+setFont("SansSerif", 12, "Plain");
+setColor(0,0,0);
+if(subcellindex[ch]){
+drawString(subsubindex[ch]+" Cell", 450, shift+20*(ch+1));
+} else {
+drawString(subsubindex[ch], 450, shift+20*(ch+1));
+}
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////*qui (start of subcomp detection settings)//////////////////////////
+print("Identifying cells...");
+
+run("ROI Manager...");
+if(!isOpen("Nuclei Channel")){
+print("Opening Images: please be patient...");
+tstart=getTime();
+if(stackslices>1){
+
+} else {
+if(nd2check<0){
+waitForUser("tiff opening");
+open(fileDAPI);
+DAPIID=getImageID();
+} else {
+waitForUser("nd2 opening");
+run("Bio-Formats", "open=["+fileDAPI+"] autoscale color_mode=Default crop rois_import=[ROI manager] specify_range view=[Standard ImageJ] stack_order=XYCZT c_begin="+(chDAPI+1)+" c_end="+(chDAPI+1)+" c_step=1 x_coordinate_1="+xpreview+" y_coordinate_1="+ypreview+" width_1="+wpreview+" height_1="+hpreview);
+//run("Bio-Formats", "open=["+fileDAPI+"] autoscale color_mode=Default rois_import=[ROI manager] specify_range view=[Standard ImageJ] stack_order=XYCZT c_begin="+(chDAPI+1)+" c_end="+(chDAPI+1)+" c_step=1");
+DAPIID=getImageID();
+}
+}
+//run("Subtract Background...", "rolling="+mincellsize);
+
+if(bgsubmode==bgdefarray[3]){
+FlatFieldCorr(chDAPI, DAPIID, false);
+run("Smooth");
+}else{
+if(bgsubmode==bgdefarray[2]){
+if(ffcorr){
+FlatFieldCorr(chDAPI, DAPIID, true);
+}
+run("Subtract Background...", "rolling="+rollingbg);
+}else{
+if(bgsubmode==bgdefarray[1]){
+run("Subtract...", "value="+bgsub[chDAPI]);
+}
+}
+}
+tstop=getTime();
+print(d2s((tstop-tstart)/1000,0)+" seconds elapsed");
+}
+selectImage(DAPIID);
+DAPIIDTitle=getTitle();
+run("Select All");
+//setBatchMode("show");
+print("DAPIID: "+DAPIIDTitle);
+//waitForUser("DAPIID: "+DAPIIDTitle+"\n Is it the right one?");
+//rename("DAPIsubsettings");
+//selectImage(DAPIID);
+
+if(autothresholdindex==1){
+selectImage(DAPIID);
+setAutoThreshold(segmeth+" dark");
+getThreshold(lowthresh, upthresh);
+}
+upthresh=655360;
+setThreshold(maxOf(20,lowthresh), upthresh);
+run("Select None");
+run("Set Measurements...", "area centroid center shape redirect=None decimal=3");
+run("Analyze Particles...", "size="+mincellsize+"-"+maxcellsize+" pixel circularity=0.00-1.00 show=Masks exclude clear include");
+//run("Analyze Particles...", "size="+mincellsize+"-"+maxcellsize+" pixel circularity=0.00-1.00 show=Masks exclude clear");
+//////////////////////////test excluding fill holes on a preexisting mask//////////
+//selectImage(DAPIID);
+//close();
+if(nResults>0){
+selectImage("Mask of "+DAPIIDTitle);
+maskID=getImageID();
+selectImage(maskID);
+run("Grays");
+//run("Invert");
+if(watercheck){
+run("Grays");
+run("Watershed");
+}
+setBatchMode("exit and display");
+run("ROI Manager...");
+run("Analyze Particles...", "size="+mincellsize+"-"+maxcellsize+" pixel circularity=0.00-1.00 show=Nothing exclude clear include add");
+selectImage(maskID);
+close();
+cellcount=roiManager("count");
+if(cellcount!=nResults){
+waitForUser("something went wrong");
+}
+print(nResults+" cells found");
+
+if(subcellindex[ch]){
+cellcount=roiManager("count");
+selectImage("Cell Comp Mask");
+for(ic=0; ic<cellcount; ic++){
+setThreshold(1,255);
+roiManager("select", ic);
+Roi.getBounds(x, y, width, height);
+doWand(x+width/2,y+height/2);
+setThreshold(2,2);
+run("Analyze Particles...", "size="+mincellsize+"-"+maxcellsize+" pixel circularity=0.00-1.00 show=Nothing  clear include");
+if(nResults>1){
+setThreshold(2,255);
+doWand(x+width/2,y+height/2);
+//waitForUser("check");
+} 
+name="0";
+for(jc=0; jc<3-lengthOf(d2s(ic,0)); jc++){
+name=name+"0";
+}
+name=name+d2s(ic,0);
+Roi.setName(name);
+roiManager("Add");
+}
+indexes=Array.getSequence(cellcount);
+roiManager("select", indexes);
+roiManager("delete");
+}
+
+////////////////////////////creation of images for subfilter method setting////////////////////////////////////////
+setBatchMode(true);
+if(!isOpen(subchID)){
+print("Opening Images for subcomp "+subsubindex[ch]+": please be patient...");
+tstart=getTime();
+if(stackslices>1){
+
+} else {
+if(nd2check<0){
+filesubch=dir+list[channels*karray+ch];
+open(filesubch);
+} else {
+filesubch=dir+list[karray];
+run("Bio-Formats", "open=["+fileDAPI+"] autoscale color_mode=Default crop rois_import=[ROI manager] specify_range view=[Standard ImageJ] stack_order=XYCZT c_begin="+(ch+1)+" c_end="+(ch+1)+" c_step=1 x_coordinate_1="+xpreview+" y_coordinate_1="+ypreview+" width_1="+wpreview+" height_1="+hpreview);
+//run("Bio-Formats", "open=["+filesubch+"] autoscale color_mode=Default rois_import=[ROI manager] specify_range view=[Standard ImageJ] stack_order=XYCZT c_begin="+(ch+1)+" c_end="+(ch+1)+" c_step=1");
+}
+subchID=getImageID();
+}
+tstop=getTime();
+print(d2s((tstop-tstart)/1000,0)+" seconds elapsed");
+}
+print("No spot filter...");
+selectImage(subchID);
+if(bgsubmode==bgdefarray[3]){
+FlatFieldCorr(ch, subchID, true);
+run("Smooth");
+}else{
+if(bgsubmode==bgdefarray[2]){
+if(ffcorr){
+FlatFieldCorr(ch, subchID, true);
+}
+run("Subtract Background...", "rolling="+rollingbg);
+}else{
+if(bgsubmode==bgdefarray[1]){
+run("Subtract...", "value="+bgsub[chDAPI]);
+}
+}
+}
+subchID=getImageID();
+//rename("Settings for subcompartment of "+canali[ch]);
+rename(subsubindex[ch]);
+selectImage(subchID);
+width=getWidth();
+height=getHeight();
+print("LoG Kernel...");
+run("Duplicate...", "title="+subfilterlist[1]);
+if(!isOpen("LoG kernel of "+canali[ch])){
+LoGKernel(sqrt(subminsize[ch])/2, canali[ch]);
+}
+run("Convolve 3D", "image="+subfilterlist[1]+" point=[LoG kernel of "+canali[ch]+"] extension=Mirror normalize output=LoGsub["+canali[ch]+"]");
+LoGID=getImageID();
+rename("LoG_"+subsubindex[ch]);
+selectImage(subfilterlist[1]);
+close();
+selectImage("LoG kernel of "+canali[ch]);
+close();
+
+//////end of creation of LoG setting image ///////////////////////////////
+
+selectImage(subchID);
+print("TopHat ...");
+run("Duplicate...", "title="+subfilterlist[2]+"sub");
+run("Duplicate...", "title=minmaxsub");
+run("Minimum...", "radius="+sqrt(subminsize[ch]));
+run("Maximum...", "radius="+sqrt(subminsize[ch]));
+imageCalculator("subtract create", subfilterlist[2]+"sub", "minmaxsub");
+THID=getImageID();
+rename("TopHat_"+subsubindex[ch]);
+selectImage(subfilterlist[2]+"sub");
+close();
+selectImage("minmaxsub");
+close();
+
+//////end of creation of TopHat setting image ///////////////////////////////
+
+selectImage(subchID);
+print("Variance filter ...");
+run("Duplicate...", "title="+subfilterlist[3]+"sub");
+run("Variance...", "radius="+sqrt(subminsize[ch])/2);
+rename("Variance_"+subsubindex[ch]);
+EDID=getImageID();
+///////////////////////end of creation of Variance setting image ///////////////////////////////
+run("Images to Stack", "method=[Copy (center)] name=subStack title="+subsubindex[ch]+" use");
+subchID=getImageID();
+setBatchMode("exit and display");
+updateDisplay();
+//run("ROI Manager...");
+roiManager("select",0);
+selectImage(subchID);
+setAutoThreshold(segmeth+" dark");
+run("Threshold...");
+waitForUser("Subcompartment "+canali[ch]+" Detection Settings", "Select the subcompartment detection filter and threshold method");
+Dialog.create("Subcompartment Detection Filter:");
+Dialog.addMessage("Choose the Image Filtering process for the Subcompartment Detection");
+Dialog.addChoice("Filtering Method: ", subfilterlist);
+Dialog.show();
+subfilterspot[ch]=Dialog.getChoice();
+//Dialog.create("Subcompartment Selection Criteria:");
+//Dialog.addMessage("Set the minimal ratio between SpotMean and MeanCell (SpotMean > n* Meancell)?\n (A negative value will exclude filtering)");
+//Dialog.addNumber("n: ", 1, 3, 7, "fold");
+//Dialog.show();
+//subgammafactor[ch]=Dialog.getNumber();
+subgammafactor[ch]=-1;
+Dialog.create("Subcompartment Thresholding:");
+Dialog.addMessage("Choose the thresholding method for the subcompartment");
+Dialog.addChoice("Segmenting Algorithm: ", segment);
+Dialog.show();
+subautothreshold[ch]=Dialog.getChoice();
+if(startsWith(subautothreshold[ch],segment[0])){
+waitForUser("Subcompartment "+canali[ch]+" Detection Settings", "Adjust the threshold to be applied to the images for subcompartment detection");
+getThreshold(sublow, subup);
+subthreshold[ch]=sublow;
+}
+
+///// end of subcomp setting for detection///////////////////////////////////////////////////
+selectImage(subchID);
+close();
+//selectImage(LoGID);
+//close();
+//selectImage(THID);
+//close();
+//selectImage(EDID);
+//close();
+//waitForUser("DAPIID: "+getTitle()+"\n Is it the right one? \n Previous was "+DAPIIDTitle);
+imglist=getList("image.titles");
+//for(im=0; im<lengthOf(imglist); im++){
+//selectImage(imglist[im]);
+//checkID=getImageID();
+//if((checkID!=controlID)||(checkID!=slideID)){
+//close();
+//}
+//}
+selectImage(analysisID);
+
+} else {
+waitForUser("Boh");
+}
+
+
+
+}
+if(is("Batch Mode")){
+setBatchMode("exit and display");
+}
+}
+//////////////////////////subcomp detection settings///////////////////////
+if((x1>256)&&(x1<286)&&(y1>86)&&(y1<100)){
+if(!isOpen(DAPIID)){
+print("Opening Images: please be patient...");
+} 
+
+if(!isOpen(DAPIID)){
+if(stackslices>1){
+
+} else {
+if(nd2check<0){
+//waitForUser("tiff opening");
+open(fileDAPI);
+DAPIID=getImageID();
+} else {
+//waitForUser("nd2 opening");
+tstart=getTime();
+run("Bio-Formats", "open=["+fileDAPI+"] autoscale color_mode=Default crop rois_import=[ROI manager] specify_range view=[Standard ImageJ] stack_order=XYCZT c_begin="+(chDAPI+1)+" c_end="+(chDAPI+1)+" c_step=1 x_coordinate_1="+xpreview+" y_coordinate_1="+ypreview+" width_1="+wpreview+" height_1="+hpreview);
+tstop=getTime();
+print(d2s((tstop-tstart)/1000,0)+" seconds elapsed");
+DAPIID=getImageID();
+}
+}
+selectImage(DAPIID);
+if(bgsubmode==bgdefarray[3]){
+FlatFieldCorr(chDAPI, DAPIID, false);
+run("Smooth");
+}else{
+if(bgsubmode==bgdefarray[2]){
+if(ffcorr){
+FlatFieldCorr(chDAPI, DAPIID, true);
+}
+run("Subtract Background...", "rolling="+rollingbg);
+}else{
+if(bgsubmode==bgdefarray[1]){
+run("Subtract...", "value="+bgsub[chDAPI]);
+}
+}
+}
+}
+//DAPIID=getImageID();
+selectImage(DAPIID);
+setBatchMode("show");
+run("Select None");
+width=getWidth();
+height=getHeight();
+size=0;
+showMessage("draw ROI size", "Draw a ROI to set the Min Cell Size");
+while(size==0){
+drawROIsize(width, height);
+}
+mincellsize=size;
+run("Select None");
+setBatchMode("hide");
+selectImage(analysisID);
+setFont("SansSerif", 12, "Plain");
+setColor(255,255,255);
+fillRect(120, 88, 80, 12);
+setColor(0,0,0);
+drawString(mincellsize, 120, 100);
+}
+///////////////////////Minimal Cell Size Settings//////////////////////////////////
+if((x1>256)&&(x1<286)&&(y1>106)&&(y1<120)){
+if(!isOpen(DAPIID)){
+print("Opening Images: please be patient...");
+} 
+if(!isOpen(DAPIID)){
+if(stackslices>1){
+
+} else {
+if(nd2check<0){
+//waitForUser("tiff opening");
+open(fileDAPI);
+DAPIID=getImageID();
+} else {
+//waitForUser("nd2 opening");
+tstart=getTime();
+run("Bio-Formats", "open=["+fileDAPI+"] autoscale color_mode=Default crop rois_import=[ROI manager] specify_range view=[Standard ImageJ] stack_order=XYCZT c_begin="+(chDAPI+1)+" c_end="+(chDAPI+1)+" c_step=1 x_coordinate_1="+xpreview+" y_coordinate_1="+ypreview+" width_1="+wpreview+" height_1="+hpreview);
+tstop=getTime();
+print(d2s((tstop-tstart)/1000,0)+" seconds elapsed");
+DAPIID=getImageID();
+}
+}
+selectImage(DAPIID);
+if(bgsubmode==bgdefarray[3]){
+FlatFieldCorr(chDAPI, DAPIID, false);
+run("Smooth");
+}else{
+if(bgsubmode==bgdefarray[2]){
+if(ffcorr){
+FlatFieldCorr(chDAPI, DAPIID, true);
+}
+run("Subtract Background...", "rolling="+rollingbg);
+} else {
+if(bgsubmode==bgdefarray[1]){
+run("Subtract...", "value="+bgsub[chDAPI]);
+}
+}
+}
+}
+selectImage(DAPIID);
+setBatchMode("show");
+run("Select None");
+width=getWidth();
+height=getHeight();
+size=0;
+showMessage("draw ROI size", "Draw a ROI to set the Max Cell Size");
+while((size==0) || (size<=mincellsize)){
+drawROIsize(width, height);
+}
+maxcellsize=size;
+run("Select None");
+setBatchMode("hide");
+selectImage(analysisID);
+setFont("SansSerif", 12, "Plain");
+setColor(255,255,255);
+fillRect(120, 108, 80, 12);
+setColor(0,0,0);
+drawString(maxcellsize, 120, 120);
+}
+//////////////////////////////////////Max Cell Size Settings///////////////////////////////////////////////////////////////////////////////////
+if((x1>256)&&(x1<286)&&(y1>66)&&(y1<80)){
+bgdefarray=newArray("None", "Manual", "RollingBall", "FlatfieldCorr(Deprecated)");
+ffcheck=false;
+autobgcheck=false;
+Dialog.create("Background Subtraction Definition");
+Dialog.addChoice("Select Background Subtraction Mode", bgdefarray, bgdefarray[3]);
+Dialog.addCheckbox("Flatfield Illumination Correction", true);
+Dialog.addCheckbox("Adjust background to the current experiment settings (for FlatfieldCorr)", false);
+Dialog.addCheckbox("Apply Watershed to separate clusters", true);
+Dialog.show();
+bgsubmode=Dialog.getChoice();
+ffcorr=Dialog.getCheckbox();
+bgadjcheck=Dialog.getCheckbox();
+watercheck=Dialog.getCheckbox();
+if(ffcorr){
+flatfielddir=getDirectory("Choose the directory containing the flatfield images");
+fflist=getFileList(flatfielddir);
+ffchannels=newArray(channels);
+Dialog.create("Flatfield Illumination Correction");
+for(ich=0; ich<channels; ich++){
+Dialog.addChoice(canali[ich], fflist);
+}
+Dialog.show();
+for(ich=0; ich<channels; ich++){
+ffchannels[ich]=Dialog.getChoice();
+}
+}
+if(bgsubmode==bgdefarray[0]){
+Array.fill(bgsub,0);
+} else {
+if(bgsubmode==bgdefarray[2]){
+autobgcheck=true;
+Array.fill(bgsub, 0);
+if(isOpen(DAPIID)){
+selectImage(DAPIID);
+close();
+}
+if(stackslices>1){
+
+} else {
+print("Opening Images: please be patient...");
+if(nd2check<0){
+//waitForUser("tiff opening");
+open(fileDAPI);
+DAPIID=getImageID();
+} else {
+//waitForUser("nd2 opening");
+tstart=getTime();
+run("Bio-Formats", "open=["+fileDAPI+"] autoscale color_mode=Default crop rois_import=[ROI manager] specify_range view=[Standard ImageJ] stack_order=XYCZT c_begin="+(chDAPI+1)+" c_end="+(chDAPI+1)+" c_step=1 x_coordinate_1="+xpreview+" y_coordinate_1="+ypreview+" width_1="+wpreview+" height_1="+hpreview);
+tstop=getTime();
+print(d2s((tstop-tstart)/1000,0)+" seconds elapsed");
+DAPIID=getImageID();
+}
+}
+rollcheck=0;
+while(rollcheck==0){
+Dialog.create("Rolling ball bg subtraction");
+Dialog.addNumber("Minimal Radius for Rolling Ball bg subtraction", 200);
+Dialog.show();
+rollingbg=Dialog.getNumber();
+selectImage(DAPIID);
+getLocationAndSize(xID, yID, widthID, heightID);
+setBatchMode(true);
+title="RollingRadius:"+rollingbg+"pixels";
+run("Duplicate...", "title="+title);
+run("Subtract Background...", "rolling="+rollingbg);
+if(ffcorr){
+if(!isOpen(ffchannels[chDAPI])){
+open(flatfielddir+File.separator+ffchannels[chDAPI]);
+ffDAPIID=getImageID();
+}
+imageCalculator("divide create 32-bit", title, ffDAPIID);
+resultID=getImageID();
+selectImage(title);
+close();
+selectImage(resultID);
+rename(title);
+}
+setBatchMode(false);
+setLocation(xID+widthID, yID);
+rollcheck=getBoolean("Is the radius OK?");
+if(rollcheck){
+selectImage(DAPIID);
+close();
+if(ffcorr){
+if(isOpen(ffDAPIID)){
+selectImage(ffDAPIID);
+close();
+}
+}
+selectImage(title);
+DAPIID=getImageID();
+} else {
+selectImage(title);
+close();
+}
+}
+selectImage(DAPIID);
+rename("Nuclei Channel");
+setBatchMode("hide");
+}
+if(bgsubmode==bgdefarray[3]){
+flatfielddir=getDirectory("Choose the directory containing the flatfield and background images");
+bgcanali=newArray(channels);
+ffchannels=newArray(channels);
+for(ich=0; ich<channels; ich++){
+pathff=flatfielddir+"ff"+canali[ich]+".tif";
+pathbg=flatfielddir+"bg"+canali[ich]+".tif";
+if((File.exists(pathff))&&(File.exists(pathbg))){
+bgsub[ich]=-1;
+ffcheck=true;
+} else {
+showMessage("Missing Background and/or Flatfield Reference Image for the "+canali[ich]+" channel. \n Remember to set background value or to exclude it from the analysis to avoid errors.");
+ffcheck=false;      
+}
+}
+
+if(bgadjcheck){
+if(isOpen(DAPIID)){
+selectImage(DAPIID);
+close();
+}
+if(stackslices>1){
+
+} else {
+print("Opening Images: please be patient...");
+if(nd2check<0){
+//waitForUser("tiff opening");
+open(fileDAPI);
+DAPIID=getImageID();
+} else {
+//waitForUser("nd2 opening");
+tstart=getTime();
+run("Bio-Formats", "open=["+fileDAPI+"] autoscale color_mode=Default crop rois_import=[ROI manager] specify_range view=[Standard ImageJ] stack_order=XYCZT c_begin="+(chDAPI+1)+" c_end="+(chDAPI+1)+" c_step=1 x_coordinate_1="+xpreview+" y_coordinate_1="+ypreview+" width_1="+wpreview+" height_1="+hpreview);
+tstop=getTime();
+print(d2s((tstop-tstart)/1000,0)+" seconds elapsed");
+DAPIID=getImageID();
+}
+}
+selectImage(DAPIID);
+width=getWidth();
+height=getHeight();
+size=0;
+Dialog.create("Setting Background...");
+Dialog.addMessage("Draw a ROI to set the Image Background");
+Dialog.show();
+while((size==0) || (size<=mincellsize)){
+drawROIsize(width, height);
+}
+getSelectionBounds(xbg, ybg, widthbg, heightbg);
+rollingbg=widthbg*heightbg;
+close();
+
+run("Set Measurements...", "mean standard decimal=3");
+setBatchMode(true);
+print("Opening Images for background correction");
+for(ibg=0; ibg<channels; ibg++){
+if(!isOpen(chID)){
+
+if(stackslices>1){
+
+} else {
+if(nd2check<0){
+//waitForUser("tiff opening");
+filech=dir+list[channels*karray+ibg];
+open(filech);
+chID=getImageID();
+} else {
+//waitForUser("nd2 opening");
+filech=dir+list[karray];
+open(filech);
+run("Bio-Formats", "open=["+fileDAPI+"] autoscale color_mode=Default crop rois_import=[ROI manager] specify_range view=[Standard ImageJ] stack_order=XYCZT c_begin="+(ibg+1)+" c_end="+(ibg+1)+" c_step=1 x_coordinate_1="+xpreview+" y_coordinate_1="+ypreview+" width_1="+wpreview+" height_1="+hpreview);
+//run("Bio-Formats", "open=["+filech+"] autoscale color_mode=Default rois_import=[ROI manager] specify_range view=[Standard ImageJ] stack_order=XYCZT c_begin="+(ibg+1)+" c_end="+(ibg+1)+" c_step=1");
+chID=getImageID();
+}
+}
+}
+print(list[karray]+" opened");
+selectImage(chID);
+makeRectangle(xbg, ybg, widthbg, heightbg);
+run("Measure");
+meanbg=getResult("Mean", ibg);
+stdDevbg=getResult("StdDev", ibg);
+if(!(bgsub[ibg]<0)){
+bgsub[ibg]=meanbg+3*stdDevbg;
+}
+selectImage(chID);
+close();
+if(bgsubmode==bgdefarray[3]){
+if(ffcheck){
+open(flatfielddir+"bg"+canali[ibg]+".tif");
+run("32-bit");
+makeRectangle(xbg, ybg, widthbg, heightbg);
+run("Measure");
+run("Select All");
+corrbgvalue=(getResult("Mean", 2*ibg)/getResult("Mean", 2*ibg+1));
+if(isNaN(corrbgvalue)){
+print(getResult("Mean", 2*ibg);
+print(getResult("Mean", 2*ibg+1);
+}
+run("Multiply...", "value="+(getResult("Mean", 2*ibg)/getResult("Mean", 2*ibg+1)));
+bgsub[ibg]=-getResult("Mean", 2*ibg)/getResult("Mean", 2*ibg+1);
+waitForUser("Bg sub problem");
+save(flatfielddir+"bg"+canali[ibg]+".tif");
+print("Saved "+flatfielddir+"bg"+canali[ibg]+".tif; Correction Factor = "+(getResult("Mean", 2*ibg)/getResult("Mean", 2*ibg+1)));
+close();
+} else {
+showMessage("Missing Background and/or Flatfield Reference Image.  Reset background value to avoid errors.");
+}
+}
+selectImage(analysisID);
+setColor(0,0,0);
+drawString(d2s(bgsub[ibg], 2), 620, shift+20*(ibg+1));
+}
+if(isOpen("Results")){
+selectWindow("Results");
+run("Close");
+}
+setBatchMode("exit and display");
+
+}                                     
+}
+}
+}
+
+//////////////////////////////////////////////////////////////////////////////////////end of Set Image Background/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+if((x1>256)&&(x1<286)&&(y1>146)&&(y1<180)){
+if(is("Batch Mode")){
+setBatchMode("exit and display");
+}
+wholecell=1;
+Dialog.create("Whole Cell Analysis");
+Dialog.addMessage("Select Channel to delimit Cell Membranes/Borders and Cytoplasm \n If Nuclei channel is selected as Membrane Channel a Voronoi-based cell separation will be applied");
+Dialog.addChoice("Membrane Channel Identifier: ", canali);
+Dialog.addChoice("Cytoplasm Channel Identifier: ", canali);
+Dialog.show();
+membchannel=Dialog.getChoice();
+cytochannel=Dialog.getChoice();
+for (ch=0; ch<channels; ch++){
+if(canali[ch]==membchannel){
+chMEMB=ch;
+}
+}
+if(nd2check<0){
+fileMEMB=dir+list[channels*karray+chMEMB];
+} else {
+fileMEMB=dir+list[karray];
+}
+for (ch=0; ch<channels; ch++){
+if(canali[ch]==cytochannel){
+chCELL=ch;
+}
+}
+if(nd2check<0){
+fileCELL=dir+list[channels*karray+chCELL];
+} else {
+fileCELL=dir+list[karray];
+}
+print("Opening Images: please be patient...");
+if(chMEMB!=chDAPI){
+if(nd2check<0){
+//waitForUser("tiff opening");
+open(fileMEMB);
+MEMBID=getImageID();
+run("Enhance Contrast", "saturated=0.5");
+} else {
+//waitForUser("nd2 opening");
+tstart=getTime();
+run("Bio-Formats", "open=["+fileMEMB+"] autoscale color_mode=Default crop rois_import=[ROI manager] specify_range view=[Standard ImageJ] stack_order=XYCZT c_begin="+(chMEMB+1)+" c_end="+(chMEMB+1)+" c_step=1 x_coordinate_1="+xpreview+" y_coordinate_1="+ypreview+" width_1="+wpreview+" height_1="+hpreview);
+tstop=getTime();
+print(d2s((tstop-tstart)/1000,0)+" seconds elapsed");
+MEMBID=getImageID();
+}
+selectImage(MEMBID);
+if(ffcorr){
+FlatFieldCorr(chMEMB, MEMBID, true);
+MEMBID=getImageID();
+}
+rename("Membrane Channel");
+run("Add Image...", "image=[Nuclei Channel] x=0 y=0 opacity=50");
+if(is("Batch Mode")){
+setBatchMode("show");
+}
+check=false;
+Dialog.create("Find Maxima Settings to delineate membranes");
+Dialog.addNumber("prominence value for Find Maxima", 200);
+Dialog.addCheckbox("Apply bg subtraction",false);
+Dialog.show();
+prom=Dialog.getNumber();
+bgMEMB=Dialog.getCheckbox();
+while(!(check)){
+if(bgMEMB){
+if(!(isOpen("MembraneBGsub"))){
+run("Duplicate...", "title=MembraneBGsub");
+run("Subtract Background...", "rolling="+rollingbg);
+MEMBID=getImageID();
+}
+}
+selectImage(MEMBID);
+MEMBIDtitle=getTitle();
+run("Find Maxima...", "prominence="+prom+" light output=[Segmented Particles]");
+selectImage(MEMBIDtitle+" Segmented");
+run("Invert");
+selectImage(MEMBID);
+run("Add Image...", "image=["+MEMBIDtitle+" Segmented] x=0 y=0 opacity=20");
+if(is("Batch Mode")){
+setBatchMode("show");
+}
+waitForUser("Check the Membrane Segmentation");
+check=getBoolean("Is the result OK?", "Yes", "No");
+if(!(check)){
+run("Remove Overlay");
+selectImage(MEMBIDtitle+" Segmented");
+close();
+prom=getNumber("prominence value for Find Maxima", prom);
+}
+}
+selectImage(MEMBIDtitle+" Segmented");
+membranemaskID=getImageID();
+rename("Membrane Mask");
+run("Invert");
+}
+selectImage("Nuclei Channel");
+run("Select All");
+run("Duplicate...", "title=[Nuclei Mask]");
+if(autothresholdindex==1){
+setAutoThreshold(segmeth+" dark");
+getThreshold(lowthresh, upthresh);
+}
+upthresh=655360;
+setThreshold(maxOf(20,lowthresh), upthresh);
+run("Convert to Mask");
+run("Watershed");
+run("Duplicate...", "title=[Voronoi Mask]");
+run("Voronoi");
+setThreshold(1,255);
+run("Convert to Mask");
+selectImage("Nuclei Mask");
+run("Duplicate...", "title=[Eroded Nuclei Mask]");
+for(m=0; m<12; m++){
+run("Erode");
+}
+if(chMEMB==chDAPI){
+run("Duplicate...", "title=[Membrane Mask]");
+run("Invert");
+}
+selectImage("Voronoi Mask");
+run("Subtract...", "value=1");
+//rename("Voronoi Mask");
+if(nd2check<0){
+//waitForUser("tiff opening");
+open(fileCELL);
+CELLID=getImageID();
+} else {
+//waitForUser("nd2 opening");
+tstart=getTime();
+run("Bio-Formats", "open=["+fileCELL+"] autoscale color_mode=Default crop rois_import=[ROI manager] specify_range view=[Standard ImageJ] stack_order=XYCZT c_begin="+(chCELL+1)+" c_end="+(chCELL+1)+" c_step=1 x_coordinate_1="+xpreview+" y_coordinate_1="+ypreview+" width_1="+wpreview+" height_1="+hpreview);
+tstop=getTime();
+print(d2s((tstop-tstart)/1000,0)+" seconds elapsed");
+CELLID=getImageID();
+}                                                                     
+selectImage(CELLID);
+if(ffcorr){
+FlatFieldCorr(chCELL, CELLID, true);
+CELLID=getImageID();
+}
+rename("Cyto Channel");
+//run("Duplicate...", "title=Cyto Mask");
+//cytoID=getImageID();
+//cytotitle=getInfo("image.title");
+//run("Subtract Background...", "rolling="+rollingbg);
+check=false;
+while(!(check)){
+selectImage("Cyto Channel");
+run("Threshold...");
+resetThreshold();
+setTool(0);
+//waitForUser("Place a small ROI to threshold the cell area");
+//List.setMeasurements;
+  //print(List.getList); // list all measurements
+//  min = List.getValue("Min");
+//  setThreshold(min, 65535);
+//check=getBoolean("Is the result OK?", "Yes", "No");
+selectImage("Cyto Channel");
+if(is("Batch Mode")){
+setBatchMode("show");
+}
+waitForUser("Set the minimal threshold to select the area covered by the cells excluding empty spaces");
+getThreshold(lowcyto, upcyto);
+check=true;
+}
+run("Convert to Mask");
+cytoID=getImageID();
+rename("Cyto Thresholded");
+imageCalculator("min create", "Membrane Mask", "Cyto Thresholded");
+cellID=getImageID();
+rename("Cell Mask");
+imageCalculator("max", "Cell Mask", "Eroded Nuclei Mask");
+imageCalculator("subtract create", "Cell Mask", "Voronoi Mask");
+rename("Cell Comp Mask");
+selectImage("Nuclei Mask");
+run("Subtract...", "value=2");
+imageCalculator("subtract ", "Cell Comp Mask", "Nuclei Mask");
+selectImage("Cyto Thresholded");
+close();
+selectImage("Cell Mask");
+close();
+selectImage("Nuclei Mask");
+close();
+selectImage("Eroded Nuclei Mask");
+close();
+selectImage("Voronoi Mask");
+close();
+selectImage("Membrane Mask");
+close();
+if(isOpen("Membrane Channel")){
+selectImage("Membrane Channel");
+close();
+}
+selectImage("Analysis Panel");
+setColor(0, 0, 0);
+drawRect(10, 167,12,12);
+drawString("Membrane: "+"["+membchannel+"]", 30, 180);
+drawRect(286, 167, 12, 12);
+setColor(255,255,255);
+fillRect(287, 168,10,10);
+setColor(0, 0, 0);
+drawString("Cytoplasm: "+"["+cytochannel+"]", 306, 180);
+if(is("Batch Mode")){
+setBatchMode("exit and display");
+}
+}
+/////////////////////////////////////////////////////////////////////////////////////end of Whole Cell settings definition///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+if((x1>79)&&(x1<91)&&(y1>167)&&(y1<179)){
+
+}
+////////////////////////////////////////end of Membrane channel setting//////
+if((x1>269)&&(x1<281)&&(y1>167)&&(y1<179)){
+
+
+}
+////////////////////////////////////end of Cytoplasm channel setting///////////
+if((x1>256)&&(x1<286)&&(y1>126)&&(y1<140)){
+autothresholdindex=1;
+setColor(255,0,0);
+drawString("Set", 262, 140);
+drawRect(256, 126, 30, 14);
+if(!isOpen(DAPIID)){
+if(stackslices>1){
+
+} else {
+if(nd2check<0){
+//waitForUser("tiff opening");
+open(fileDAPI);
+DAPIID=getImageID();
+} else {
+//waitForUser("nd2 opening");
+tstart=getTime();
+run("Bio-Formats", "open=["+fileDAPI+"] autoscale color_mode=Default crop rois_import=[ROI manager] specify_range view=[Standard ImageJ] stack_order=XYCZT c_begin="+(chDAPI+1)+" c_end="+(chDAPI+1)+" c_step=1 x_coordinate_1="+xpreview+" y_coordinate_1="+ypreview+" width_1="+wpreview+" height_1="+hpreview);
+tstop=getTime();
+print(d2s((tstop-tstart)/1000,0)+" seconds elapsed");
+DAPIID=getImageID();
+}
+}
+selectImage(DAPIID);
+if(bgsubmode==bgdefarray[3]){
+FlatFieldCorr(chDAPI, DAPIID, false);
+run("Smooth");
+}else{
+if(bgsubmode==bgdefarray[2]){
+if(ffcorr){
+FlatFieldCorr(chDAPI, DAPIID, true);
+}
+run("Subtract Background...", "rolling="+rollingbg);
+} else {
+if(bgsubmode==bgdefarray[1]){
+run("Subtract...", "value="+bgsub[chDAPI]);
+}
+}
+}
+} else {
+selectImage(DAPIID);
+setBatchMode("show");
+}
+
+selectImage(DAPIID);
+run("Select All");
+setAutoThreshold();
+run("Threshold...");
+//imagedepth=bitDepth();
+//resetThreshold();
+selectWindow("Threshold");
+waitForUser("Test the segmenting algorithms, press Set and set the choosen one from the list");
+Dialog.create("Auto Thresholding");
+Dialog.addChoice("Segmenting Algorithm: ", segment);
+Dialog.show();
+segmeth=Dialog.getChoice();
+if(isOpen("Threshold")){
+selectWindow("Threshold");
+run("Close");
+}
+selectImage(DAPIID);
+getThreshold(lowthresh, upthresh);
+if(upthresh<2^imagedepth){
+upthresh=2^imagedepth;
+}
+resetThreshold();
+setBatchMode("hide");
+selectImage(analysisID);
+setColor(255,255,255);
+fillRect(120, 128, 80, 12);
+setColor(0,0,0);
+drawString("["+segmeth+"]", 120, 140);
+drawString("Set", 262, 140);
+drawRect(256, 126, 30, 14);
+}
+//end of Auto Thresholding/////////////////////////////////////////////
+
+if((flags&leftButton!=0)&&(x1>100)&&(x1<200)&&(y1>220+20*channels+30)&&(y1<220+20*channels+30+40)){
+print("Execute Analysis");
+resultsdir=File.getParent(dir);
+File.setDefaultDir(resultsdir);
+resultsdir=getDirectory("Choose the directory to store results");
+setColor(0,0,0);
+drawRect(100, 220+20*channels+30, 100, 40);
+setColor(90, 0, 0);
+fillRect(102, 220+20*channels+30+2, 96, 36);
+setColor(255, 255, 255);
+drawString("In progress...", 105, 220+20*channels+30+28);
+Analysis(dir, list, tag, resultsdir, channels, analysisindex);
+setColor(0,0,0);
+drawRect(100, 220+20*channels+30, 100, 40);
+setColor(90, 0, 0);
+fillRect(102, 220+20*channels+30+2, 96, 36);
+setColor(255, 255, 255);
+drawString("Execute Analysis", 105, 220+20*channels+30+28);
+
+}
+////////////////////////////////////////////////////////////////////////////////////////////////////end of Execute Analysis
+if((flags&leftButton!=0)&&(x1>300)&&(x1<400)&&(y1>220+20*channels+30)&&(y1<220+20*channels+30+40)){
+batchyesno=getBoolean("Do you already have the list of directories to be analysed?");
+if(batchyesno){
+batchpath=File.openDialog("Select the file (.txt) containing the folder paths to be analysed");
+batchlist=File.openAsString(batchpath);
+} else {
+batchlistyesno=true;
+batchlist=dir+"\t"+tag+"\n";
+while(batchlistyesno){
+dir=getDirectory("Choose a Directory (the dir used for settings is already included)");
+batchlist=batchlist+dir+"\t";
+Dialog.create("Insert a short description for data (it will be used in the results filename)");
+Dialog.addString("Experiment tag", "Ctrl");
+Dialog.show();
+tag=Dialog.getString();
+batchlist=batchlist+tag+"\n";
+batchlistyesno=getBoolean("Do you want to select another directory to be analysed?");
+}
+if(isOpen("Log")){
+selectWindow("Log");
+run("Close");
+}
+print(batchlist);
+waitForUser("Do you want to proceed?");
+}
+resultsdir=getDirectory("Choose the directory to store results");
+dirtaglist=split(batchlist, "\n");
+for(ilist=0; ilist<lengthOf(dirtaglist); ilist++){
+dirlist=split(dirtaglist[ilist], "\t");
+dir=dirlist[0];
+list=getFileList(dir);
+Array.sort(list);
+tag=dirlist[1];
+total=list.length;
+setColor(0,0,0);
+drawRect(100, 220+20*channels+30,100 , 40);
+setColor(90, 0, 0);
+fillRect(102, 220+20*channels+30+2, 96 , 36);
+setColor(255, 255, 255);
+drawString("File "+d2s(ilist+1,0)+" of "+lengthOf(dirtaglist), 105, 220+20*channels+30+28);
+Analysis(dir, list, tag, resultsdir, channels, analysisindex);
+}
+setColor(0,0,0);
+drawRect(100, 220+20*channels+30, 100, 40);
+setColor(90, 0, 0);
+fillRect(102, 220+20*channels+30+2, 96, 36);
+setColor(255, 255, 255);
+drawString("Execute Analysis", 105, 220+20*channels+30+28);
+
+}
+//////////////////////////////////////////////////////////////////////////////end of Batch Analysis
+if((flags&leftButton!=0)&&(x1>500)&&(x1<600)&&(y1>220+20*channels+30)&&(y1<220+20*channels+30+40)){
+online=true;
+showMessage("Online Analysis no more available");
+
+}
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////end of Online Analysis/////////////////////
+
+//next parenthesis is the  end of the of the if((flags&leftButton!=0)&&(x1!=x)&&(y1!=y))//////////////////
+}
+//next parenthesis is the  end of the of the if(isActive(analysisID))////////////////////////////////
+}
+selectImage(analysisID);
+}
+print("Closed analysis control panel");
+setBatchMode("exit and display");
+updateDisplay();
+selectImage(controlID);
+x1=0;
+y1=0;
+secondtime=true;
+}
+
+function drawROIsize(width, height) {
+setTool(0);
+xc=-1;
+yc=-1;
+run("Select None");
+getCursorLoc(x1, y1, z1, flags);
+if(flags&leftButton!=0) {
+xs=x1;
+ys=y1;
+while (flags&leftButton!=0)  {
+    getCursorLoc(x1, y1, z1, flags);
+    if (x1!=xs || y1!=ys ) {
+       xf=x1; yf=y1;
+       if (x1<0) xf=0; 
+       if (x1>=width) xf=width-1;
+       if (y1<0) yf=0; 
+       if (y1>=height) yf=height-1;
+       makeRectangle(minOf(xs,xf),minOf(ys,yf),abs(xf-xs),abs(yf-ys));
+       size=abs(xf-xs)*abs(yf-ys);
+     }
+
+}
+print("ROI size: "+size);
+return size;
+}
+}
+
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+function Analysis(dir, list, tag, resultsdir, channels, analysisindex){
+analysedchannels=0;
+subanalysedchannels=0;
+if(isOpen(DAPIID)){
+selectImage(DAPIID);
+close();
+}
+if(isOpen("Log")){
+selectWindow("Log");
+run("Close");
+}
+run("Options...", "iterations=1 count=1 black edm=Overwrite");
+//resultsdir=File.getParent(dir);
+lastrow="*"+"\t"+"*"+"\t"+"*"+"\t";
+
+getDateAndTime(year, month, dayOfWeek, dayOfMonth, hour, minute, second, msec);
+resultsfilepath=resultsdir+tag+"_"+year+"_"+(month+1)+"_"+dayOfMonth+"_"+hour+"_"+minute+".txt";
+resultsprint=File.open(resultsfilepath);
+string="FilePath\t X\t Y\t  0: Cell_N.\t 0: Cell_Xc\t 0: Cell_Yc\t 0: Cell_Area\t 0: Cell_Circularity";
+//string="FilePath\t X\t Y\t N.\t CellArea\t Circularity\t Xc\t Yc";
+for(k=0; k<channels; k++){
+string=string+"\t 0: Cell_Mean["+canali[k]+"] "+"\t 0: Cell_Total Intensity["+canali[k]+"]"+"\t 0: Cell_StdDev["+canali[k]+"] ";                  
+//string=string+"\t Mean["+canali[k]+"] "+"\t Total Intensity["+canali[k]+"]"+"\t Max["+canali[k]+"] ";
+analysedchannels=analysedchannels+1;
+}
+if(wholecell){
+string=string+"\t 0: Cell_Whole_Area\t 0: Cell_Whole_Circularity"; 
+for(k=0; k<channels; k++){
+string=string+"\t 0: Cell__Whole_Mean["+canali[k]+"] "+"\t 0: Cell_Whole_Total Intensity["+canali[k]+"]"+"\t 0: Cell_Whole_StdDev["+canali[k]+"] ";   
+}
+string=string+"\t 0: Cell_Cyto_Area\t 0: Cell_Cyto_Circularity"; 
+for(k=0; k<channels; k++){
+string=string+"\t 0: Cell__Cyto_Mean["+canali[k]+"] "+"\t 0: Cell_Cyto_Total Intensity["+canali[k]+"]"+"\t 0: Cell_Cyto_StdDev["+canali[k]+"] ";   
+}
+}
+for(k=0; k<channels; k++){
+if(subcompindex[k]==1){
+subanalysedchannels=subanalysedchannels+1;
+string=string+"\t 0: Cell_Number ("+subsubindex[k]+")"+"\t 0: Cell_Average Size ("+subsubindex[k]+")"+"\t 0: Cell_Area ("+subsubindex[k]+")"+"\t 0: Cell_Area Fraction ("+subsubindex[k]+")" ;
+for(kch=0; kch<channels; kch++){
+string=string+"\t 0: Cell_Mean["+canali[kch]+"] ("+subsubindex[k]+")"+"\t 0: Cell_Total Intensity["+canali[kch]+"] ("+subsubindex[k]+")"+"\t 0: Cell_Fractional Intensity["+canali[kch]+"] ("+subsubindex[k]+")";
+}
+}
+}
+////////end of Cell parameters data headings
+subanalysedchannels=0;
+for(k=0; k<channels; k++){
+if(subcompindex[k]==1){
+subanalysedchannels=subanalysedchannels+1;
+string=string+"\t "+subanalysedchannels+": "+subsubindex[k]+"_# spot"+"\t "+subanalysedchannels+": "+subsubindex[k]+"_XM spot"+"\t "+subanalysedchannels+": "+subsubindex[k]+"_YM spot"+"\t "+subanalysedchannels+": "+subsubindex[k]+"_Area Spot"+"\t "+subanalysedchannels+": "+subsubindex[k]+"_Circ. Spot";                       
+for(kch=0; kch<channels; kch++){
+string=string+"\t "+subanalysedchannels+": "+subsubindex[k]+"_MeanSpot["+canali[kch]+"]"+"\t "+subanalysedchannels+": "+subsubindex[k]+"_IntDenSpot["+canali[kch]+"]"+"\t "+subanalysedchannels+": "+subsubindex[k]+"_StdDevSpot["+canali[kch]+"]";
+}
+}
+}
+//////////////////////////////////////////////////////////////////////end of heading construction///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+print(resultsprint, string);
+totspotNumber=newArray(subanalysedchannels);                                                           
+setBatchMode(true);
+h=0;
+call("java.lang.System.gc");
+if(nd2check<0){
+imgnumber=total/channels;
+} else {
+imgnumber=total;
+}
+for(i=0; i<imgnumber; i++){
+for(ick=1; ick<=nImages; ick++){
+selectImage(ick);
+title=getTitle();
+if((indexOf(title, "Nuclei")>=0)||indexOf(title, "Mask")>=0||isOpen(DAPIID)){
+selectImage(ick);
+close();
+}
+}
+
+waitingtime=0;
+ank=0;
+if(nd2check<0){
+file=dir+list[chDAPI+channels*i];
+} else {
+file=dir+list[i];
+}
+print("Analysed File Path: "+file);
+if(!File.exists(file)){
+waitForUser("why");
+}
+if(nd2check<0){
+if((i+1)<imgnumber){
+nextfile=dir+list[chDAPI+channels*(i+1)];
+} else {
+nextfile=dir+list[chDAPI+channels*i];
+}
+} else {
+if((i+1)<imgnumber){
+nextfile=dir+list[i+1];
+} else {
+nextfile=dir+list[i];
+}
+}
+if(online){
+if(!File.exists(file)){
+print("The file:\n"+file+"\n is missing");
+}
+while((!File.exists(file))&&(!File.exists(nextfile))&&(waitingtime<300000)){
+print("The file:\n"+file+"\n is missing at present...\n Waiting " + (5-waitingtime/60000)+" minutes");
+wait(60000);
+waitingtime=waitingtime+60000;
+}
+}
+if(File.exists(file)){
+IJ.redirectErrorMessages();
+run("Set Scale...", "distance=0 known=0 pixel=1 unit=pixel global");
+while(!isOpen(DAPIID)){
+if(stackslices>1){
+
+} else {
+if(nd2check<0){
+//waitForUser("tiff opening");
+open(file);
+DAPIID=getImageID();
+} else {
+//waitForUser("nd2 opening");
+run("Bio-Formats", "open=["+file+"] autoscale color_mode=Default rois_import=[ROI manager] specify_range view=[Standard ImageJ] stack_order=XYCZT c_begin="+(chDAPI+1)+" c_end="+(chDAPI+1)+" c_step=1");
+DAPIID=getImageID();
+}
+}
+}
+selectImage(DAPIID);
+print("Actual image: "+getTitle());
+if(bgsubmode==bgdefarray[3]){
+FlatFieldCorr(chDAPI, DAPIID, false);
+run("Smooth");
+} else {
+if(bgsubmode==bgdefarray[2]){
+if(ffcorr){
+FlatFieldCorr(chDAPI, DAPIID, true);
+} 
+run("Subtract Background...", "rolling="+rollingbg);
+}else{
+if(bgsubmode==bgdefarray[1]){
+run("Subtract...", "value="+bgsub[chDAPI]);
+}
+}
+}
+DAPIID=getImageID();
+//if(nd2check<0){
+//rename(list[chDAPI+channels*i]);
+//} else {
+//rename(list[i]);
+//}
+rename("Nuclei Channel");
+if(autothresholdindex==1){
+selectImage(DAPIID);
+//setBatchMode("show");
+setAutoThreshold(segmeth+" dark");
+getThreshold(lowthresh, upthresh);
+}
+upthresh=65536;
+setThreshold(maxOf(20,lowthresh), upthresh);
+run("Select None");
+run("Set Measurements...", "area centroid center shape redirect=None decimal=3");
+//run("Analyze Particles...", "size="+mincellsize+"-"+maxcellsize+" pixel circularity=0.00-1.00 show=Masks exclude clear include");
+run("Analyze Particles...", "size="+mincellsize+"-"+maxcellsize+" pixel circularity=0.00-1.00 show=Masks exclude clear include");
+//////////////////////////test excluding fill holes on a preexisting mask//////////
+if(nd2check<0){
+findex=chDAPI+channels*i;
+} else {
+findex=i;
+}
+if(isOpen("Mask of Nuclei Channel")){
+selectImage("Mask of Nuclei Channel");
+rename("Nuclei");
+maskID=getImageID();
+}
+
+if(nResults>0){
+selectImage(maskID);
+//run("Invert");
+run("Grays");
+if(watercheck){
+run("Watershed");
+}
+if(wholecell){
+if(nd2check<0){
+fileMEMB=dir+list[channels*i+chMEMB];
+} else {
+fileMEMB=dir+list[i];
+}
+if(nd2check<0){
+fileCELL=dir+list[channels*i+chCELL];
+} else {
+fileCELL=dir+list[i];
+}
+if(chMEMB!=chDAPI){
+if(nd2check<0){
+open(fileMEMB);
+MEMBID=getImageID();
+run("Enhance Contrast", "saturated=0.5");
+} else {                                  
+tstart=getTime();
+run("Bio-Formats", "open=["+fileMEMB+"] autoscale color_mode=Default crop rois_import=[ROI manager] specify_range view=[Standard ImageJ] stack_order=XYCZT c_begin="+(chMEMB+1)+" c_end="+(chMEMB+1)+" c_step=1 x_coordinate_1="+xpreview+" y_coordinate_1="+ypreview+" width_1="+wpreview+" height_1="+hpreview);
+tstop=getTime();
+print(d2s((tstop-tstart)/1000,0)+" seconds elapsed");
+MEMBID=getImageID();
+}
+selectImage(MEMBID);
+if(ffcorr){
+FlatFieldCorr(chMEMB, MEMBID, true);
+MEMBID=getImageID();
+}
+if(bgMEMB){
+run("Subtract Background...", "rolling="+rollingbg);
+MEMBID=getImageID();
+}
+rename("Membrane Channel");
+run("Find Maxima...", "prominence="+prom+" light output=[Segmented Particles]");
+selectImage("Membrane Channel Segmented");
+membranemaskID=getImageID();
+rename("Membrane Mask");
+}
+selectImage("Nuclei");
+run("Select All");
+run("Duplicate...", "title=[Nuclei Mask]");
+//if(autothresholdindex==1){
+//setAutoThreshold(segmeth+" dark");
+//getThreshold(lowthresh, upthresh);
+//}
+//upthresh=655360;
+//setThreshold(maxOf(20,lowthresh), upthresh);
+//run("Convert to Mask");
+//run("Watershed");
+run("Duplicate...", "title=[Voronoi Mask]");
+run("Voronoi");
+setThreshold(1,255);
+run("Convert to Mask");
+selectImage("Nuclei Mask");
+run("Duplicate...", "title=[Eroded Nuclei Mask]");
+for(m=0; m<8; m++){
+run("Erode");
+}
+if(chMEMB==chDAPI){
+run("Duplicate...", "title=[Membrane Mask]");
+run("Invert");
+}
+selectImage("Voronoi Mask");
+run("Subtract...", "value=1");
+//rename("Voronoi Mask");
+if(nd2check<0){
+//waitForUser("tiff opening");
+open(fileCELL);
+CELLID=getImageID();
+} else {
+//waitForUser("nd2 opening");
+tstart=getTime();
+run("Bio-Formats", "open=["+fileCELL+"] autoscale color_mode=Default crop rois_import=[ROI manager] specify_range view=[Standard ImageJ] stack_order=XYCZT c_begin="+(chCELL+1)+" c_end="+(chCELL+1)+" c_step=1 x_coordinate_1="+xpreview+" y_coordinate_1="+ypreview+" width_1="+wpreview+" height_1="+hpreview);
+tstop=getTime();
+print(d2s((tstop-tstart)/1000,0)+" seconds elapsed");
+CELLID=getImageID();
+}
+selectImage(CELLID);
+if(ffcorr){
+FlatFieldCorr(chCELL, CELLID, true);
+CELLID=getImageID();
+}
+rename("Cyto Channel");
+setThreshold(lowcyto, 65536);
+run("Convert to Mask");
+cytoID=getImageID();
+rename("Cyto Thresholded");
+imageCalculator("min create", "Membrane Mask", "Cyto Thresholded");
+cellID=getImageID();
+rename("Cell Mask");
+imageCalculator("max", "Cell Mask", "Eroded Nuclei Mask");
+imageCalculator("subtract create", "Cell Mask", "Voronoi Mask");
+rename("Cell Comp Mask");
+selectImage("Nuclei Mask");
+run("Subtract...", "value=2");
+imageCalculator("subtract ", "Cell Comp Mask", "Nuclei Mask");
+selectImage("Cyto Thresholded");
+close();
+selectImage("Cell Mask");
+close();
+selectImage("Nuclei Mask");
+close();
+selectImage("Eroded Nuclei Mask");
+close();
+selectImage("Voronoi Mask");
+close();
+selectImage("Membrane Mask");
+close();
+if(isOpen("Membrane Channel")){
+selectImage("Membrane Channel");
+close();
+}
+}
+selectImage(maskID);
+run("Select None");
+//run("Analyze Particles...", "size="+mincellsize+"-"+maxcellsize+" pixel circularity=0.00-1.00 show=Masks exclude clear include");
+run("Analyze Particles...", "size="+mincellsize+"-"+maxcellsize+" pixel circularity=0.00-1.00 show=Nothing exclude clear include");
+//////////////////////////test excluding fill holes on a preexisting mask//////////
+nCells=nResults;
+cellarea=newArray(nResults);
+cellcircularity=newArray(nResults);
+particlexcoord=newArray(nResults);
+particleycoord=newArray(nResults);
+xcoord=newArray(nResults);
+ycoord=newArray(nResults);
+if(wholecell){
+wholecellarea=newArray(nResults);
+wholecellcircularity=newArray(nResults);
+wholeparticlexcoord=newArray(nResults);
+wholeparticleycoord=newArray(nResults);
+cytoarea=newArray(nResults);
+cytocircularity=newArray(nResults);
+}
+for(j=0; j<nCells; j++){
+cellarea[j]=getResult("Area", j);
+cellcircularity[j]=getResult("Circ.",j);
+xcoord[j]=getResult("X",j);
+ycoord[j]=getResult("Y",j);
+particlexcoord[j]=":";
+particleycoord[j]=":";
+selectImage(maskID);
+doWand(getResult("X",j),getResult("Y",j));
+getSelectionCoordinates(xc,yc);
+for(ipxc=0; ipxc<xc.length; ipxc++){
+particlexcoord[j]=particlexcoord[j]+d2s(xc[ipxc],0)+":";
+particleycoord[j]=particleycoord[j]+d2s(yc[ipxc],0)+":";
+}
+}
+if(wholecell){
+for(j=0; j<nCells; j++){
+particlexcoord[j]=particlexcoord[j]+"|";
+particleycoord[j]=particleycoord[j]+"|";
+selectImage("Cell Comp Mask");
+setThreshold(1,255);
+doWand(xcoord[j],ycoord[j]);
+setThreshold(2,2);
+run("Analyze Particles...", "size="+mincellsize+"-"+maxcellsize+" pixel circularity=0.00-1.00 show=Nothing include");
+if(nResults>1){
+setThreshold(2,255);
+doWand(xcoord[j],ycoord[j]);
+}
+//run("Measure");
+List.setMeasurements;
+  //print(List.getList); // list all measurements
+//wholecellarea[j]=maxOf(0,getResult("Area", j));
+wholecellarea[j]=maxOf(0,List.getValue("Area"));
+//wholecellcircularity[j]=maxOf(0,getResult("Circ.", j));
+wholecellcircularity[j]=maxOf(0,List.getValue("Circ."));
+cytoarea[j]=maxOf(0,wholecellarea[j]-cellarea[j]);
+cytocircularity[j]=wholecellcircularity[j];
+getSelectionCoordinates(xc,yc);
+for(ipxc=0; ipxc<xc.length; ipxc++){
+particlexcoord[j]=particlexcoord[j]+d2s(xc[ipxc],0)+":";
+particleycoord[j]=particleycoord[j]+d2s(yc[ipxc],0)+":";
+}
+}
+}
+selectImage(maskID);
+run("Select All");
+mean=newArray(analysedchannels*nResults);
+max=newArray(analysedchannels*nResults);
+totalfluo=newArray(analysedchannels*nResults);
+if(wholecell){
+meanwholecell=newArray(analysedchannels*nResults);
+maxwholecell=newArray(analysedchannels*nResults);
+totalfluowholecell=newArray(analysedchannels*nResults);
+meancyto=newArray(analysedchannels*nResults);
+maxcyto=newArray(analysedchannels*nResults);
+totalfluocyto=newArray(analysedchannels*nResults);
+}
+for(k=0; k<channels; k++){
+if(stackslices>1){
+
+} else {
+if(nd2check<0){
+file=dir+list[k+channels*i];
+open(file);
+chID=getImageID();
+} else {
+file=dir+list[i];
+run("Bio-Formats", "open=["+file+"] autoscale color_mode=Default rois_import=[ROI manager] specify_range view=[Standard ImageJ] stack_order=XYCZT c_begin="+(k+1)+" c_end="+(k+1)+" c_step=1");
+chID=getImageID();
+}
+}
+selectImage(chID);
+if(bgsubmode==bgdefarray[3]){
+FlatFieldCorr(k, chID, false);
+run("Smooth");
+}else{
+if(bgsubmode==bgdefarray[2]){
+if(ffcorr){
+FlatFieldCorr(k, chID, true);
+}
+run("Subtract Background...", "rolling="+rollingbg);
+} else {
+if(bgsubmode==bgdefarray[1]){
+run("Subtract...", "value="+bgsub[chDAPI]);
+}
+}
+}
+chID=getImageID();
+rename(canali[k]);
+print(canali[k]);
+name="["+canali[k]+"]";
+run("Set Measurements...", " mean standard centroid integrated redirect="+name+" decimal=3");
+selectImage(maskID);
+run("Select None");
+//run("Select All");
+//run("Analyze Particles...", "size="+mincellsize+"-"+maxcellsize+" pixel circularity=0.00-1.00 show=Masks exclude clear include");
+run("Analyze Particles...", "size="+mincellsize+"-"+maxcellsize+" pixel circularity=0.00-1.00 show=Nothing exclude clear include");
+//////////////////////////test excluding fill holes on a preexisting mask//////////
+for(j=0; j<nResults; j++){
+max[ank+analysedchannels*j]=maxOf(0,getResult("StdDev", j));
+mean[ank+analysedchannels*j]=maxOf(0,getResult("Mean",j));
+totalfluo[ank+analysedchannels*j]=mean[ank+analysedchannels*j]*cellarea[j];
+}
+if(wholecell){
+run("Clear Results");
+for(j=0; j<nCells; j++){
+selectImage(canali[k]);
+wholexcoord=split(particlexcoord[j],"|");
+wholeycoord=split(particleycoord[j],"|");
+wholecellxcoord=split(wholexcoord[1],":");
+wholecellycoord=split(wholeycoord[1],":");
+makeSelection("polygon",wholecellxcoord, wholecellycoord);
+List.setMeasurements;
+//maxwholecell[ank+analysedchannels*j]=maxOf(0,getResult("StdDev", j));
+maxwholecell[ank+analysedchannels*j]=maxOf(0,List.getValue("StdDev"));
+//meanwholecell[ank+analysedchannels*j]=maxOf(0,getResult("Mean",j));
+meanwholecell[ank+analysedchannels*j]=maxOf(0,List.getValue("Mean"));
+//totalfluowholecell[ank+analysedchannels*j]=maxOf(0,getResult("IntDen",j));
+totalfluowholecell[ank+analysedchannels*j]=maxOf(0,List.getValue("IntDen"));
+maxcyto[ank+analysedchannels*j]=maxwholecell[ank+analysedchannels*j];
+totalfluocyto[ank+analysedchannels*j]=totalfluowholecell[ank+analysedchannels*j]-totalfluo[ank+analysedchannels*j];
+if(cytoarea[j]==0){
+meancyto[ank+analysedchannels*j]=0;
+} else {
+meancyto[ank+analysedchannels*j]=totalfluocyto[ank+analysedchannels*j]/cytoarea[j];
+}
+}
+}
+ank=ank+1;
+selectImage(chID);
+//close();
+
+/////////////end of if (analysisindex[ch]==1)///removed on February 4, 2013
+}
+/////////////////////end of k cycle////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+subcompArea=newArray(nCells*subanalysedchannels);
+spotNumber=newArray(nCells*subanalysedchannels);
+spotArea=newArray(nCells*subanalysedchannels);
+spotCirc=newArray(nCells*subanalysedchannels);
+spotXM=newArray(nCells*subanalysedchannels);
+spotYM=newArray(nCells*subanalysedchannels);
+for(ixs=0; ixs<nCells*subanalysedchannels; ixs++){
+spotArea[ixs]="|";
+spotCirc[ixs]="|";
+spotXM[ixs]="|";
+spotYM[ixs]="|";
+}
+subcompAverSize=newArray(nCells*subanalysedchannels);
+subcompNumber=newArray(nCells*subanalysedchannels);
+subcompFracSize=newArray(nCells*subanalysedchannels);
+subcompMeanFluo=newArray(nCells*subanalysedchannels*analysedchannels);
+spotFluoMean=newArray(nCells*subanalysedchannels*analysedchannels);
+spotFluoMax=newArray(nCells*subanalysedchannels*analysedchannels);
+spotFluoInt=newArray(nCells*subanalysedchannels*analysedchannels);
+for(ixs=0; ixs<nCells*subanalysedchannels*analysedchannels; ixs++){
+spotFluoMean[ixs]="|";
+spotFluoMax[ixs]="|";
+spotFluoInt[ixs]="|";
+}
+subcompTotFluo=newArray(nCells*subanalysedchannels*analysedchannels);
+subcompFracFluo=newArray(nCells*subanalysedchannels*analysedchannels);
+isub=0;
+run("Clear Results");
+for(ksub=0; ksub<channels; ksub++){
+if(subcompindex[ksub]!=0){
+print("Subcomp "+canali[ksub]);
+if(isOpen("SubC"+canali[ksub])){
+selectImage("SubC"+canali[ksub]);
+close();
+}
+selectImage(canali[ksub]);
+if(startsWith(subfilterspot[ksub],subfilterlist[0])){
+run("Duplicate...", "title=SubC"+canali[ksub]);
+}
+if(startsWith(subfilterspot[ksub], subfilterlist[1])){
+if(!isOpen("LoG kernel of "+canali[ksub])){
+LoGKernel(sqrt(subminsize[ksub])/2, canali[ksub]);
+}
+//run("LoG 3D", "sigmax="+sqrt(subminsize[ksub])+" sigmay="+sqrt(subminsize[ksub]));
+//showMessage("Convolve Kernel for "+canali[ksub]);
+//run("Convolve 3D", "image="+canali[ksub]+" point=[LoG kernel of "+canali[ksub]+"] extension=[Mirror (not recommnded for correlation)] normalize create output=LoG");////MAC version///////
+run("Convolve 3D", "image="+canali[ksub]+" point=[LoG kernel of "+canali[ksub]+"] extension=Mirror normalize output=SubC"+canali[ksub]);
+selectImage("LoG kernel of "+canali[ksub]);
+close();
+selectImage("SubC"+canali[ksub]);
+}
+if(startsWith(subfilterspot[ksub],subfilterlist[2])){
+run("Duplicate...", "title=SubCstart");
+run("Duplicate...", "title=SubCminmax");
+run("Minimum...", "radius="+sqrt(subminsize[ksub])/2);
+run("Maximum...", "radius="+sqrt(subminsize[ksub])/2);
+imageCalculator("subtract create", "SubCstart", "SubCminmax");
+rename("SubC"+canali[ksub]);
+selectImage("SubCstart");
+close();
+selectImage("SubCminmax");
+close();
+selectImage("SubC"+canali[ksub]);
+}
+if(startsWith(subfilterspot[ksub],subfilterlist[3])){
+run("Duplicate...", "title=SubC"+canali[ksub]);
+run("Variance...", "radius="+sqrt(subminsize[ch])/2);
+}
+
+for(j=0; j<nCells; j++){
+particlexcoord[j]=particlexcoord[j]+"*";
+particleycoord[j]=particleycoord[j]+"*";
+if(subcellindex[ksub]==1){
+selectImage("SubC"+canali[ksub]);
+wholetruncx=substring(particlexcoord[j],0,indexOf(particlexcoord[j],"*"));
+wholetruncy=substring(particleycoord[j],0,indexOf(particleycoord[j],"*"));
+wholexcoord=split(wholetruncx,"|");
+wholeycoord=split(wholetruncy,"|");
+wholecellxcoord=split(wholexcoord[1],":");
+wholecellycoord=split(wholeycoord[1],":");
+Array.show(wholecellxcoord, wholecellycoord);
+makeSelection("polygon",wholecellxcoord, wholecellycoord);
+if(i>0){
+//setBatchMode("show");
+//run("Draw", "slice");
+//waitForUser("strange");
+}
+} else {
+selectImage(maskID);
+doWand(xcoord[j], ycoord[j]);
+getSelectionCoordinates(xsubcoord,ysubcoord);
+selectImage("SubC"+canali[ksub]);
+makeSelection("polygon", xsubcoord, ysubcoord);
+}
+//getStatistics(areas, means, mins, maxs, stds);
+if(startsWith(subautothreshold[ksub],segment[0])){
+setThreshold(subthreshold[ksub],1000000000);
+} else {
+setAutoThreshold(subautothreshold[ksub]+" dark");
+getThreshold(lowpr,highpr);
+//print("Threshold for SubC Particle "+j+" "+subautothreshold[ksub]+" : "+lowpr+" "+highpr);
+}
+run("Analyze Particles...", "size="+subminsize[ksub]+"-"+submaxsize[ksub]+" pixel circularity=0.00-1.00 show=Masks clear include");
+
+if(nResults>0){
+print("Found "+nResults+" spots for cell "+d2s(j,0));
+selectImage("Mask of SubC"+canali[ksub]);
+subcompmaskID=getImageID();
+selectImage("Mask of SubC"+canali[ksub]);
+run("Grays");
+run("Watershed");
+if(subcellindex[ksub]==1){
+run("Set Measurements...", "area mean standard bounding shape integrated redirect=[Cell Comp Mask] decimal=3");
+selectImage("Mask of SubC"+canali[ksub]);
+makeSelection("polygon",wholecellxcoord, wholecellycoord);
+} else {
+selectImage(maskID);
+doWand(xcoord[j], ycoord[j]);
+getSelectionCoordinates(xsubcoord,ysubcoord);
+selectImage("Mask of SubC"+canali[ksub]);
+makeSelection("polygon", xsubcoord, ysubcoord);
+run("Set Measurements...", "area mean standard bounding shape integrated redirect=[Nuclei] decimal=3");
+}
+
+run("Analyze Particles...", "size="+subminsize[ksub]+"-"+submaxsize[ksub]+" pixel circularity=0.00-1.00 show=Nothing clear include");
+if(nResults==0){
+//waitForUser("subcomp detection error");
+}
+subcompfilter=newArray(nResults);
+nspotsfiltered=0;
+spotNumber[isub*nCells+j]=nResults;
+for(ip=0; ip<nResults; ip++){
+particlexcoord[j]=particlexcoord[j]+"|"+getResult("BX", ip)+":"+getResult("Width", ip);
+particleycoord[j]=particleycoord[j]+"|"+getResult("BY", ip)+":"+getResult("Height", ip);
+spotArea[isub*nCells+j]=spotArea[isub*nCells+j]+d2s(getResult("Area",ip),0)+"|";
+subcompArea[isub*nCells+j]=subcompArea[isub*nCells+j]+getResult("Area",ip);
+spotCirc[isub*nCells+j]=spotCirc[isub*nCells+j]+d2s(getResult("Mean",ip),0)+"|";
+nspotsfiltered=nspotsfiltered+1;
+subcompfilter[ip]=1;
+
+}
+subcompNumber[isub*nCells+j]=nspotsfiltered;
+if(nspotsfiltered!=0){
+subcompAverSize[isub*nCells+j]=subcompArea[isub*nCells+j]/nspotsfiltered;
+subcompFracSize[isub*nCells+j]=100*subcompArea[isub*nCells+j]/cellarea[j];
+}
+if(spotNumber[isub*nCells+j]!=0){
+ich=0;
+for(kch=0; kch<channels; kch++){
+if(analysisindex[ksub*channels+kch]){
+run("Set Measurements...", "mean standard min centroid center integrated redirect="+canali[kch]+" decimal=3");
+selectImage("Mask of SubC"+canali[ksub]);
+run("Analyze Particles...", "size="+subminsize[ksub]+"-"+submaxsize[ksub]+" pixel circularity=0.00-1.00 show=Nothing clear include");
+for(ip=0; ip<nResults; ip++){
+if(kch==ksub){
+spotXM[isub*nCells+j]=spotXM[isub*nCells+j]+d2s(getResult("XM",ip),0)+"|";
+spotYM[isub*nCells+j]=spotYM[isub*nCells+j]+d2s(getResult("YM",ip),0)+"|";
+}
+spotFluoMean[j+nCells*ich+nCells*analysedchannels*isub]=spotFluoMean[j+nCells*ich+nCells*analysedchannels*isub]+d2s(maxOf(0,getResult("Mean",ip)),3)+"|";
+spotFluoMax[j+nCells*ich+nCells*analysedchannels*isub]=spotFluoMax[j+nCells*ich+nCells*analysedchannels*isub]+d2s(maxOf(0,getResult("StdDev",ip)),3)+"|";
+spotFluoInt[j+nCells*ich+nCells*analysedchannels*isub]=spotFluoInt[j+nCells*ich+nCells*analysedchannels*isub]+d2s(maxOf(0,getResult("IntDen",ip)),3)+"|";
+
+if(subcompfilter[ip]==1){
+subcompTotFluo[j+nCells*ich+nCells*analysedchannels*isub]=subcompTotFluo[j+nCells*ich+nCells*analysedchannels*isub]+maxOf(0,getResult("IntDen",ip));
+}
+}
+if(nspotsfiltered!=0){
+subcompMeanFluo[j+nCells*ich+nCells*analysedchannels*isub]=subcompTotFluo[j+nCells*ich+nCells*analysedchannels*isub]/nspotsfiltered;
+subcompFracFluo[j+nCells*ich+nCells*analysedchannels*isub]=100*subcompTotFluo[j+nCells*ich+nCells*analysedchannels*isub]/totalfluo[analysedchannels*j+ich];
+}
+
+}
+ich=ich+1;
+}
+//////////////////////////end loop on channels (kch)////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+}
+////////////////////////////end if condition on the number of spots//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+selectImage("Mask of SubC"+canali[ksub]);
+close();
+}
+//////////////////////////end if condition on nResults///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+if(isOpen("Mask of SubC"+canali[ksub])){
+selectImage("Mask of SubC"+canali[ksub]);
+close();
+}
+}
+//////////////////////////end loop on cells (j)///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+isub=isub+1;
+selectImage("SubC"+canali[ksub]);
+run("Close");
+}
+//////////////////////////end if condition on subcompindex/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+}
+//////////////////////end of subcompartment analysis (ksub)////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+selectImage(maskID);
+close();
+for(k=0; k<channels; k++){
+if(isOpen(canali[k])){
+selectImage(canali[k]);
+close();
+}
+}
+
+//file=dir+list[channels*i];
+for(j=0; j<nCells; j++){
+h=h+1;
+if(nd2check<0){
+fileindex=toString(channels*i);
+} else {
+fileindex=toString(i);
+}
+resultstring=fileindex+"\t "+particlexcoord[j]+"\t "+particleycoord[j]+"\t "+toString(h)+"\t "+xcoord[j]+"\t "+ycoord[j]+"\t "+cellarea[j]+"\t "+cellcircularity[j];
+for(k=0; k<analysedchannels; k++){
+resultstring=resultstring+"\t "+mean[k+analysedchannels*j]+"\t "+totalfluo[k+analysedchannels*j]+"\t "+max[k+analysedchannels*j];
+}
+if(wholecell){
+resultstring=resultstring+"\t "+wholecellarea[j]+"\t "+wholecellcircularity[j];
+for(k=0; k<analysedchannels; k++){
+resultstring=resultstring+"\t "+meanwholecell[k+analysedchannels*j]+"\t "+totalfluowholecell[k+analysedchannels*j]+"\t "+maxwholecell[k+analysedchannels*j];
+}
+resultstring=resultstring+"\t "+cytoarea[j]+"\t "+cytocircularity[j];
+for(k=0; k<analysedchannels; k++){
+resultstring=resultstring+"\t "+meancyto[k+analysedchannels*j]+"\t "+totalfluocyto[k+analysedchannels*j]+"\t "+maxcyto[k+analysedchannels*j];
+}
+}
+for(isub=0; isub<subanalysedchannels; isub++){
+resultstring=resultstring+"\t "+subcompNumber[isub*nCells+j]+"\t "+subcompAverSize[isub*nCells+j]+"\t "+subcompArea[isub*nCells+j]+"\t "+subcompFracSize[isub*nCells+j];
+for(ich=0; ich<analysedchannels; ich++){
+resultstring=resultstring+"\t "+subcompMeanFluo[j+nCells*ich+nCells*analysedchannels*isub]+"\t "+subcompTotFluo[j+nCells*ich+nCells*analysedchannels*isub]+"\t "+subcompFracFluo[j+nCells*ich+nCells*analysedchannels*isub];
+}
+}
+for(isub=0; isub<subanalysedchannels; isub++){
+totspotNumber[isub]=totspotNumber[isub]+spotNumber[isub*nCells+j];
+resultstring=resultstring+"\t"+spotNumber[isub*nCells+j]+"\t"+spotXM[isub*nCells+j]+"\t"+spotYM[isub*nCells+j]+"\t"+spotArea[isub*nCells+j]+"\t"+spotCirc[isub*nCells+j];
+for(ich=0; ich<analysedchannels; ich++){
+resultstring=resultstring+"\t"+spotFluoMean[j+nCells*ich+nCells*analysedchannels*isub]+"\t"+spotFluoInt[j+nCells*ich+nCells*analysedchannels*isub]+"\t"+spotFluoMax[j+nCells*ich+nCells*analysedchannels*isub];
+}
+}
+print(resultsprint, resultstring);
+}
+
+///////////////////end of j cycle
+if(wholecell){
+if(isOpen(cellID)){
+selectImage(cellID);
+close();
+}
+}
+} else {
+print("No cells");
+//waitForUser("check no cells");
+}
+//////////////////end of if condition on particle detection (nResults>0)//////////////////////////////////////////////////////////////////////////////////////////////////////////////
+if(isOpen(maskID)){
+selectImage(maskID);
+close();
+}
+
+if(isOpen(DAPIID)){
+selectImage(DAPIID);
+close();
+}
+} else {                                                         
+if(i+1<imgnumber){
+//wait(120000);
+}
+print("File Missing: "+file);
+}
+
+////////////////////////end of if condition on File.exists(file)////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+for(ick=1; ick<=nImages; ick++){
+selectImage(ick);
+title=getTitle();
+if((indexOf(title, "Mask")>=0)||isOpen(DAPIID)){
+selectImage(ick);
+close();
+//setBatchMode("exit and display");
+//waitForUser("Check open Images: "+title+" is open; index i= "+i);
+}
+}
+}
+///////////////////end of i cycle
+for(k=0; k<channels; k++){
+if(isOpen("LoG kernel of "+canali[k])){
+selectImage("LoG kernel of "+canali[k]);
+close();
+}
+if(isOpen("ff"+canali[k]+".tif")){
+selectImage("ff"+canali[k]+".tif");
+close();
+}
+if(isOpen("bg"+canali[k]+".tif")){
+selectImage("bg"+canali[k]+".tif");
+close();
+}
+}
+lastrow=lastrow+toString(h)+"\t"+"*"+"\t"+"*"+"\t"+"*"+"\t"+"*";
+for(k=0; k<analysedchannels; k++){
+lastrow=lastrow+"\t"+"*"+"\t"+"*"+"\t"+"*";
+}
+for(isub=0; isub<subanalysedchannels; isub++){
+lastrow=lastrow+"\t"+"*"+"\t"+"*"+"\t"+"*"+"\t"+"*";
+for(ich=0; ich<analysedchannels; ich++){
+lastrow=lastrow+"\t"+"*"+"\t"+"*"+"\t"+"*";
+}
+}
+if(wholecell){
+lastrow=lastrow+"\t"+"*"+"\t"+"*";
+for(k=0; k<analysedchannels; k++){
+lastrow=lastrow+"\t"+"*"+"\t"+"*"+"\t"+"*";
+}
+lastrow=lastrow+"\t"+"*"+"\t"+"*";
+for(k=0; k<analysedchannels; k++){
+lastrow=lastrow+"\t"+"*"+"\t"+"*"+"\t"+"*";
+}
+}
+for(isub=0; isub<subanalysedchannels; isub++){
+lastrow=lastrow+"\t"+totspotNumber[isub]+"\t"+"*"+"\t"+"*"+"\t"+"*"+"\t"+"*";
+for(ich=0; ich<analysedchannels; ich++){
+lastrow=lastrow+"\t"+"*"+"\t"+"*"+"\t"+"*";
+}
+}
+print(resultsprint, lastrow);
+print(resultsprint, dir+"_"+year+"_"+month+"_"+dayOfMonth+"_"+hour+"_"+minute);
+File.close(resultsprint);
+print("Online Analysis executed");
+selectWindow("Log");
+//resultsfilepath=resultsdir+tag+"_"+year+"_"+(month+1)+"_"+dayOfMonth+"_"+hour+"_"+minute+".txt";
+//save(resultsfilepath);
+//run("Close");
+setBatchMode(false);
+updateDisplay();
+//////////////////end of function analysis
+}
+
+function LoGKernel(sigma, color){
+newImage("LoG kernel of "+color, "32-bit black", 6*sigma+1, 6*sigma+1, 1);
+for(x=0; x<6*sigma+1; x++){
+for(y=0; y<6*sigma+1; y++){
+xi=x-3*sigma;
+yi=y-3*sigma;
+sigma2=sigma*sigma;
+kernel=((xi*xi)/sigma2-1/sigma2*sigma2+(yi*yi)/sigma2-1/sigma2*sigma2)*exp(-0.5*(xi*xi+yi*yi)/sigma2);
+setPixel(x,y,kernel);
+}
+}
+}
+/////////////////////////////////////////////////////////////////////////end of LoGKernel function///////////////////////////////////////////////////
+function FlatFieldCorr(indchannel, IDchannel, fileclose){
+BMcheck=is("Batch Mode");
+//if(!BMcheck){
+//setBatchMode(false);
+//updateDisplay();
+//}
+selectImage(IDchannel);
+//run("Subtract Background...", "rolling="+rollingbg+" sliding");
+if(!isOpen(ffchannels[indchannel])){
+open(flatfielddir+File.separator+ffchannels[indchannel]);
+}
+imageCalculator("divide create 32-bit", IDchannel, ffchannels[indchannel]);
+rename("Result");
+if(fileclose){
+selectImage(ffchannels[indchannel]);
+close();
+} 
+selectImage(IDchannel);
+title=getTitle();
+close();
+selectImage("Result");
+rename(title);
+IDchannel=getImageID();
+print("IDchannel: "+IDchannel);
+changeValues(-1E99, 0, 0);
+//print("Result Image ID: "+getTitle());
+//if(BMcheck){
+//setBatchMode(false);
+//updateDisplay();
+//}
+}
+///////////////////////////////////////////////////////////////////////end of FlatFieldCorr function////////////////////////////////////////
+
