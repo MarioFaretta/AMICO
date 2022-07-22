@@ -17,3 +17,5 @@ The macros were tested on ImageJ 1.53n, JAVA 1.8.0_172 (64-bit) on Windows 8.1.
 Macro to Browse through Acquired Images, Set for Segmentation and Analysis of Particles, Set of intracellular subcompartment (e.g. foci) recognition. Results are stored in a tab-txt file.
 # AMICO_Plotting.txt
 Macro to analyze the results of AMICO_Union Image Analysis producing Dot Plots and Histograms. It is possible to define Regions of Interest and combine them into logical gates as normally done in flow-cytometry.
+# MacroRegTwoImages_220722
+Macro to register two images and multichannel stacks based on the TurboReg ImageJ Plugin
