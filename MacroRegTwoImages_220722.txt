@@ -1,0 +1,189 @@
+scaledown=1;
+////scaledown is a number < 1 representing the percentual value reduction (0.25>>>25%)
+if(nImages<2){
+showMessage("At least two open images are required");
+exit();
+} else {
+Dialog.create("Image Selection");
+imglist=getList("image.titles");
+Dialog.addChoice("Target Image (Fixed Reference): ", imglist, imglist[0]);
+Dialog.addChoice("Source Image (to be registered): ", imglist, imglist[1]);
+Dialog.show();
+first=Dialog.getChoice();
+second=Dialog.getChoice();
+selectImage(first);
+first=first+"_RegRaw";
+rename(first);
+if(nSlices>1){
+if(Stack.isHyperstack){
+Stack.getDimensions(mwidth, mheight, channels, slices, frames);
+} else {
+run("Stack to Hyperstack...", "order=xyczt(default) channels="+nSlices+" slices=1 frames=1 display=Color");
+//showMessage("Hyperstack format is required for stack "+first);
+//exit();
+Stack.getDimensions(mwidth, mheight, channels, slices, frames);
+}
+Dialog.create("Channel Selection");
+Dialog.addChoice("Select the channel for the registration of "+first+": ", Array.slice(Array.getSequence(channels+1),1,channels+1));
+Dialog.show();
+firstch=parseInt(Dialog.getChoice());
+} else {
+mwidth=getWidth();
+mheight=getHeight();
+}
+selectImage(second);
+second=second+"_RegRaw";
+rename(second);
+if(nSlices>1){
+if(Stack.isHyperstack){
+Stack.getDimensions(width, height, channels, slices, frames);
+} else {
+run("Stack to Hyperstack...", "order=xyczt(default) channels="+nSlices+" slices=1 frames=1 display=Color");
+//showMessage("Hyperstack format is required for stack "+first);
+//exit();
+Stack.getDimensions(width, height, channels, slices, frames);
+}
+mwidth=maxOf(mwidth, width);
+mheight=maxOf(mheight, height);
+Dialog.create("Channel Selection");
+Dialog.addChoice("Select the channel for the registration of "+second+": ", Array.slice(Array.getSequence(channels+1),1,channels+1));
+Dialog.show();
+secondch=parseInt(Dialog.getChoice());
+} else {
+mwidth=maxOf(mwidth, getWidth());
+mheight=maxOf(mheight, getHeight());
+}
+selectImage(first);
+run("Canvas Size...", "width="+mwidth+" height="+mheight+" position=Top-Left zero");
+if(Stack.isHyperstack){
+run("Duplicate...", "duplicate title=First channels="+firstch);
+} else {
+run("Duplicate...", "duplicate title=First");
+}
+selectImage("First");
+resetMinAndMax();
+run("Enhance Contrast", "saturated=0.35");
+run("8-bit");
+run("Red");
+//run("Size...", "width="+scaledown*mwidth+" height="+scaledown*mheight+" depth=1 constrain average interpolation=Bilinear");
+selectImage(second);
+run("Canvas Size...", "width="+mwidth+" height="+mheight+" position=Top-Left zero");
+if(Stack.isHyperstack){
+run("Duplicate...", "duplicate title=Second channels="+secondch);
+} else {
+run("Duplicate...", "duplicate title=Second");
+}
+selectImage("Second");
+resetMinAndMax();
+run("Enhance Contrast", "saturated=0.35");
+run("8-bit");
+run("Green");
+//run("Size...", "width="+scaledown*mwidth+" height="+scaledown*mheight+" depth=1 constrain average interpolation=Bilinear");
+fixdx=0;
+fixdy=0;                  
+selectWindow("First");
+run("Add Image...", "image=Second x=0 y=0 opacity=50");
+setTool(0);
+Overlay.activateSelection(0);
+Overlay.moveTo(fixdx, fixdy);
+Overlay.hide;                                                                                                     
+waitForUser("Move the overlay, then press OK");
+Overlay.addSelection;
+run("Select All");
+Overlay.removeSelection(0);
+run("List Elements");
+selectWindow("Overlay Elements of First");
+ovrows=split(getInfo("window.contents"),"\n");
+ovpos=split(ovrows[1], "\t");
+print(ovpos[5]+", "+ovpos[6]);
+fixdx=parseInt(ovpos[5]);
+fixdy=parseInt(ovpos[6]);
+Overlay.removeSelection(0);
+selectImage("Second");
+run("Select All");
+run("Translate...", "x="+fixdx+" y="+fixdy+" interpolation=Bilinear stack");
+waitForUser("pause");
+run("Size...", "width="+scaledown*mwidth+" height="+scaledown*mheight+" depth=1 constrain average interpolation=Bilinear");
+selectWindow("First");
+run("Size...", "width="+scaledown*mwidth+" height="+scaledown*mheight+" depth=1 constrain average interpolation=Bilinear");
+waitForUser("pause");
+print("TurboReg start");
+xreg=yreg=0;
+run("TurboReg ",
+	"-align " // Register the two images that we have just prepared.
+	+ "-window Second "// Source (window reference).
+	+ xreg+" "+yreg+ " " + floor(scaledown*(mwidth - 1)) + " " + floor(scaledown*(mheight - 1)) + " "// No cropping.
+	+ "-window First "// Source (target reference).
+	+ xreg+" "+yreg+ " " + floor(scaledown*(mwidth - 1)) + " " + floor(scaledown*(mheight - 1)) + " "// No cropping.
+	+ "-rigidBody " // This corresponds to rotation and translation.
+	+ floor(xreg+scaledown*(mwidth/2)) + " " +floor(yreg+scaledown*(mheight/2))+ " " // Source translation landmark.
+	+ floor(xreg+scaledown*(mwidth/2)) + " " +floor(yreg+scaledown*(mheight/2))+ " " // Target translation landmark.
+	+ xreg+" " +floor(yreg + scaledown*(mheight / 2)) + " " // Source first rotation landmark.
+	+ xreg+" " +floor(yreg + scaledown*(mheight / 2)) + " "// Target first rotation landmark.
+	+ floor(xreg+scaledown*(mwidth - 1)) + " " + floor(yreg+ scaledown*(mheight/2)) + " " // Source second rotation landmark.
+	+ floor(xreg+scaledown*(mwidth - 1)) + " " + floor(yreg+ scaledown*(mheight/2)) + " " // Target second rotation landmark.
+	+ "-showOutput");
+print("TurboReg end");
+sourceX0 = getResult("sourceX", 0); // First line of the table.
+sourceY0 = getResult("sourceY", 0);
+targetX0 = getResult("targetX", 0);
+targetY0 = getResult("targetY", 0);
+sourceX1 = getResult("sourceX", 1); // Second line of the table.
+sourceY1 = getResult("sourceY", 1);
+targetX1 = getResult("targetX", 1);
+targetY1 = getResult("targetY", 1);
+sourceX2 = getResult("sourceX", 2); // Third line of the table.
+sourceY2 = getResult("sourceY", 2);
+targetX2 = getResult("targetX", 2);
+targetY2 = getResult("targetY", 2);
+tdxreg = targetX0 - sourceX0;
+tdyreg = targetY0 - sourceY0;
+translation = sqrt(tdxreg * tdxreg + tdyreg * tdyreg); // Amount of translation, in pixel units.
+dx = sourceX2 - sourceX1;
+dy = sourceY2 - sourceY1;
+sourceAngle = atan2(dy, dx);
+dx = targetX2 - targetX1;
+dy = targetY2 - targetY1;
+targetAngle = atan2(dy, dx);
+rotationreg = targetAngle - sourceAngle; // Amount of rotation, in radian units.
+print("Amount of translation dx: "+tdxreg);
+print("Amount of translation dy: "+tdyreg);
+print("Amount of translation [pixel]: " + translation);
+print("Amount of rotation [degree]: " + (rotationreg * 180.0 / PI));
+
+selectImage("Output");
+setSlice(2);
+run("Delete Slice");
+run("8-bit");
+rename("RegisteredSecond");
+run("Merge Channels...", "c1=First c2=RegisteredSecond c3=Second create");
+selectWindow("Composite");
+rename("Merge");
+waitForUser("End of First Phase");
+selectWindow(second);
+run("Select All");
+run("Translate...", "x="+tdxreg/scaledown+fixdx+" y="+tdyreg/scaledown+fixdy+" interpolation=Bilinear stack");
+run("Select All");
+run("Rotate... ", "angle="+(rotationreg * 180.0 / PI)+" grid=1 interpolation=Bilinear stack");
+selectWindow(first);
+if(Stack.isHyperstack){
+run("Re-order Hyperstack ...", "channels=[Slices (z)] slices=[Channels (c)] frames=[Frames (t)]");
+//run("Hyperstack to Stack");
+//run("Stack to Images");
+}
+selectWindow(second);
+if(Stack.isHyperstack){
+run("Re-order Hyperstack ...", "channels=[Slices (z)] slices=[Channels (c)] frames=[Frames (t)]");
+//run("Hyperstack to Stack");
+//run("Stack to Images");
+}
+run("Concatenate...", "  title=Registered image1="+first+" image2="+second+" image3=[-- None --]");
+//run("Images to Stack", "method=[Copy (top-left)] name=Registered title=.nd2 use");
+run("Re-order Hyperstack ...", "channels=[Slices (z)] slices=[Channels (c)] frames=[Frames (t)]");
+run("Stack to Hyperstack...", "order=xyczt(default) channels="+nSlices+" slices=1 frames=1 display=Color");
+selectWindow("Registered");
+setSlice(1);
+run("Enhance Contrast", "saturated=0.35");
+
+}
+
