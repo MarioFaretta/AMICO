@@ -14,8 +14,8 @@ The macros were tested on ImageJ 1.53n, JAVA 1.8.0_172 (64-bit) on Windows 8.1.
 4.Furia L, Pelicci P, Faretta M. Confocal microscopy for high-resolution and high-content analysis of the cell cycle. Curr Protoc Cytom. 2014 Oct 1;70:7.42.1-14. doi: 10.1002/0471142956.cy0742s70. PMID: 25271962.
 
 # AMICO_Union.txt
-Macro to Browse through Acquired Images, Set for Segmentation and Analysis of Particles, Set of intracellular subcompartment (e.g. foci) recognition. Results are stored in a tab-txt file.
+Macro to Browse through Acquired Images, Set for Segmentation and Analysis of Particles, Set of intracellular subcompartment (e.g. foci) recognition. Results are stored in a tab-txt file. The macro works on .nd2, multichannel OME.tiff files or on separated channels tiffs for a single position.
 # AMICO_Plotting.txt
 Macro to analyze the results of AMICO_Union Image Analysis producing Dot Plots and Histograms. It is possible to define Regions of Interest and combine them into logical gates as normally done in flow-cytometry.
-# MacroRegTwoImages_220722
+# MacroRegTwoImages_220722.txt
 Macro to register two images and multichannel stacks based on the TurboReg ImageJ Plugin
